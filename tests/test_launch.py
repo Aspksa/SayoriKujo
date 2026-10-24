@@ -121,7 +121,7 @@ class LaunchHarness(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.project = Path(self.temp.name) / "Папка с пробелами" / "Саёри (Кудзё) & Kujо!"
         shutil.copytree(ROOT, self.project,
-                        ignore=shutil.ignore_patterns("__pycache__", ".git", ".venv", "runtime"))
+                        ignore=shutil.ignore_patterns("__pycache__", ".git", ".venv", "runtime", "data"))
 
     def spawn(self, command, **kwargs):
         running = RunningProcess(command, cwd=self.temp.name, **kwargs)
@@ -265,6 +265,10 @@ class WindowsFailureTests(LaunchHarness):
     def test_missing_traffic_module_is_named_and_window_waits(self):
         (self.project / "bootstrap" / "traffic.py").unlink()
         self.assert_failure_keeps_window("Не найден bootstrap\\traffic.py")
+
+    def test_missing_diagnostics_module_is_named_and_window_waits(self):
+        (self.project / "bootstrap" / "diagnostics.py").unlink()
+        self.assert_failure_keeps_window("Не найден bootstrap\\diagnostics.py")
 
     def test_missing_bootstrap_file_is_named_and_window_waits(self):
         (self.project / "bootstrap" / "start.ps1").unlink()

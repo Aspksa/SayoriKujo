@@ -162,6 +162,7 @@ class ConsoleOutput:
         self.interactive = self.stream.isatty()
         self.lock = threading.Lock()
         self.width = 0
+        self.sink = None
 
     def _clear(self):
         if self.width:
@@ -173,6 +174,8 @@ class ConsoleOutput:
             self._clear()
             self.stream.write(text + "\n")
             self.stream.flush()
+        if self.sink is not None:
+            self.sink(text)
 
     def status(self, text):
         if not self.interactive:
@@ -187,7 +190,7 @@ class ConsoleOutput:
 
 
 class TrafficMonitor:
-    def __init__(self, traffic, console, provider=None, interval=2):
+    def __init__(self, traffic, console, provider=None, interval=2, on_sample=None):
         self.traffic, self.console = traffic, console
         self.provider, self.interval = provider, interval
         self.session = AdapterSession()
@@ -195,6 +198,7 @@ class TrafficMonitor:
         self.thread = None
         self.error = None
         self.had_sample = False
+        self.on_sample = on_sample
 
     def sample(self):
         try:
@@ -207,6 +211,18 @@ class TrafficMonitor:
         except (OSError, AttributeError) as error:
             self.session.unavailable()
             self.error = str(error)
+        if self.on_sample is not None:
+            self.on_sample(self.snapshot())
+
+    def snapshot(self):
+        rx, tx = self.traffic.snapshot()
+        return {
+            "network_pc": {"received_bytes": self.session.received if self.had_sample else None,
+                           "sent_bytes": self.session.sent if self.had_sample else None,
+                           "available": self.had_sample and self.error is None,
+                           "complete": self.had_sample and not self.session.incomplete and self.error is None},
+            "local_http": {"received_bytes": rx, "sent_bytes": tx},
+        }
 
     def status_text(self):
         rx, tx = self.traffic.snapshot()
