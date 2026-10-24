@@ -423,8 +423,18 @@ class Learning:
             digest = self.digest(snapshot["content"], snapshot.get("scope", "global"), restored_project)
             if db.execute("SELECT 1 FROM memories WHERE digest=? AND id!=?", (digest, identity)).fetchone():
                 raise BrainError("Этот текст уже сохранён другой записью. Выберите её актуальной вручную.", 409)
+            current = db.execute("SELECT digest FROM memories WHERE id=?", (identity,)).fetchone()
+            if current[0] != digest:
+                db.execute("INSERT OR IGNORE INTO tombstones VALUES(?)", (current[0],))
             self.version(db, identity, "До восстановления версии")
             series = db.execute("SELECT series_id FROM memory_series WHERE memory_id=?", (identity,)).fetchone()[0]
+            if snapshot.get("slot"):
+                others = db.execute("SELECT id FROM memories WHERE slot=? AND kind=? AND id!=? AND status IN ('active','conflict')",
+                                    (snapshot["slot"], snapshot["kind"], identity)).fetchall()
+                for other in others:
+                    if self.same_scope(db, other[0], snapshot.get("scope", "global"), restored_project):
+                        self.version(db, other[0], "До восстановления другого актуального факта")
+                        db.execute("UPDATE memories SET status='superseded',updated=? WHERE id=?", (now(), other[0]))
             db.execute("UPDATE memories SET status='superseded' WHERE id IN (SELECT memory_id FROM memory_series WHERE series_id=?)", (series,))
             db.execute("""UPDATE memories SET content=?,digest=?,kind=?,tier=?,slot=?,note='',origin='manual',confirmed=1,
                        status='active',updated=? WHERE id=?""", (snapshot["content"], digest, snapshot["kind"], snapshot["tier"],

@@ -125,6 +125,34 @@ class LearningTests(unittest.TestCase):
         self.assertEqual([m["content"] for m in self.service.state()["profile"]], [text])
         self.assertTrue(self.service.state()["profile"][0]["confirmed"])
 
+    def test_restored_manual_text_does_not_resurrect_discarded_edit(self):
+        identity = self.service.store.edit_memory({"content": "Мне нужны короткие ответы.", "kind": "preference"})
+        original = self.service.store.learning.versions(identity)[0]
+        self.service.store.edit_memory({"id": identity, "content": "Мне нужны подробные ответы.", "kind": "preference"})
+        self.service.store.learning.restore(original["id"])
+        self.analyse("Мне нужны подробные ответы.", [{"kind": "preference", "quote": "Мне нужны подробные ответы."}])
+        self.assertEqual([r["content"] for r in self.service.store.memories()], ["Мне нужны короткие ответы."])
+
+    def test_restore_resolves_unrelated_slot_conflict_in_same_scope(self):
+        self.analyse("Мне нужен русский интерфейс.", [{"kind": "preference", "slot": "interface.language", "quote": "Мне нужен русский интерфейс."}])
+        old = self.service.store.memories()[0]
+        original = self.service.store.learning.versions(old["id"])[0]
+        self.analyse("Мне нужен английский интерфейс.", [{"kind": "preference", "slot": "interface.language", "quote": "Мне нужен английский интерфейс."}])
+        other = next(r for r in self.service.store.memories() if r["id"] != old["id"])
+        self.service.store.edit_memory({"id": other["id"], "content": other["content"], "kind": other["kind"]})
+        self.service.store.learning.restore(original["id"])
+        self.assertEqual([r["id"] for r in self.service.state()["profile"]], [old["id"]])
+
+    def test_project_core_is_scoped_and_restoration_restores_scope(self):
+        chat, a = self.project("Sakura")
+        identity = self.service.store.memories()[0]["id"]
+        self.service.store.edit_memory({"id": identity, "content": "В этом проекте важна красная тема.", "tier": "core", "project_id": a["id"]})
+        version = self.service.store.learning.versions(identity)[0]
+        self.service.store.edit_memory({"id": identity, "content": "Общее правило оформления.", "project_id": None})
+        self.service.store.learning.restore(version["id"])
+        self.assertEqual(self.service.store.retrieve("Любой вопрос"), [])
+        self.assertEqual([r["id"] for r in self.service.store.retrieve("Продолжай", chat)], [identity])
+
     def test_implicit_conflict_cannot_claim_explicit_replacement(self):
         self.analyse("Я выбираю русский язык.", [{"kind": "preference", "slot": "language", "quote": "Я выбираю русский язык."}])
         old = self.service.store.memories()[0]
