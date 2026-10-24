@@ -8,8 +8,10 @@ $env:PYTHONIOENCODING = 'utf-8'
 try {
     $projectRoot = Split-Path -Parent $PSScriptRoot
     $serverPath = Join-Path $projectRoot 'server.py'
-    if (-not (Test-Path -LiteralPath $serverPath -PathType Leaf)) {
-        throw 'Не найден server.py. Сначала распакуйте весь архив проекта.'
+    foreach ($required in @('server.py', 'bootstrap\traffic.py')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $required) -PathType Leaf)) {
+            throw ('Не найден ' + $required + '. Сначала распакуйте весь архив проекта.')
+        }
     }
 
     Write-Host '[SayoriKujo] Проверка Python 3.10 или новее...'

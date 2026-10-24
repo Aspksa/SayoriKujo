@@ -1,7 +1,9 @@
 """Minimal local SayoriKujo server. Requires only Python's standard library."""
 
 import argparse
+import importlib.util
 import json
+from pathlib import Path
 import socket
 import sys
 import threading
@@ -10,6 +12,13 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, build_opener
+
+
+# The launcher uses -I, so load this project's module by its absolute path.
+_traffic_spec = importlib.util.spec_from_file_location(
+    "sayori_traffic", Path(__file__).resolve().parent / "bootstrap" / "traffic.py")
+traffic = importlib.util.module_from_spec(_traffic_spec)
+_traffic_spec.loader.exec_module(traffic)
 
 
 PAGE = """<!doctype html>
@@ -30,6 +39,10 @@ class LocalServer(ThreadingHTTPServer):
     allow_reuse_address = False
     daemon_threads = True
 
+    def __init__(self, *args, **kwargs):
+        self.traffic = traffic.HttpTraffic()
+        super().__init__(*args, **kwargs)
+
     def server_bind(self):
         if sys.platform == "win32":
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
@@ -44,6 +57,11 @@ class LocalServer(ThreadingHTTPServer):
 class Handler(BaseHTTPRequestHandler):
     server_version = "SayoriKujo"
     sys_version = ""
+
+    def setup(self):
+        super().setup()
+        self.rfile = traffic.MeteredStream(self.rfile, self.server.traffic, "rx")
+        self.wfile = traffic.MeteredStream(self.wfile, self.server.traffic, "tx")
 
     def do_GET(self):
         self.respond()
@@ -84,7 +102,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def open_browser_when_ready(url, stopped):
+def open_browser_when_ready(url, stopped, report=None):
+    report = report if report is not None else lambda text: print(text, flush=True)
     opener = build_opener(ProxyHandler({}))
     deadline = time.monotonic() + 15
     while not stopped.is_set() and time.monotonic() < deadline:
@@ -102,12 +121,12 @@ def open_browser_when_ready(url, stopped):
             continue
         try:
             if not webbrowser.open(url, new=2):
-                print(f"[SayoriKujo] Откройте адрес в браузере вручную: {url}", flush=True)
+                report(f"[SayoriKujo] Откройте адрес в браузере вручную: {url}")
         except Exception as error:
-            print(f"[SayoriKujo] Не удалось открыть браузер: {error}. Откройте вручную: {url}", flush=True)
+            report(f"[SayoriKujo] Не удалось открыть браузер: {error}. Откройте вручную: {url}")
         return
     if not stopped.is_set():
-        print("[SayoriKujo] Браузер не открыт: сервер не подтвердил готовность.", flush=True)
+        report("[SayoriKujo] Браузер не открыт: сервер не подтвердил готовность.")
 
 
 def main():
@@ -115,23 +134,32 @@ def main():
     parser.add_argument("--no-browser", action="store_true", help="Не открывать браузер")
     args = parser.parse_args()
     stopped = threading.Event()
+    console = traffic.ConsoleOutput()
+    monitor = None
     try:
         # Port 0 allocates and reserves a free port in one operation.
         with LocalServer(("127.0.0.1", 0), Handler) as server:
             url = f"http://127.0.0.1:{server.server_port}/"
-            print(f"[SayoriKujo] Готово: {url}", flush=True)
-            print("[SayoriKujo] Для остановки нажмите Ctrl+C или закройте это окно.", flush=True)
+            console.message(f"[SayoriKujo] Готово: {url}")
+            console.message("[SayoriKujo] Для остановки нажмите Ctrl+C или закройте это окно.")
+            monitor = traffic.TrafficMonitor(server.traffic, console)
+            monitor.start()
             if not args.no_browser:
-                threading.Thread(target=open_browser_when_ready, args=(url, stopped), daemon=True).start()
+                threading.Thread(target=open_browser_when_ready,
+                                 args=(url, stopped, console.message), daemon=True).start()
             try:
                 server.serve_forever(poll_interval=0.2)
             finally:
                 stopped.set()
     except KeyboardInterrupt:
-        print("\n[SayoriKujo] Сервер остановлен.", flush=True)
+        console.message("[SayoriKujo] Сервер остановлен.")
     except Exception as error:
-        print(f"[SayoriKujo] Ошибка запуска: {error}", file=sys.stderr, flush=True)
+        console.message(f"[SayoriKujo] Ошибка запуска: {error}")
         return 1
+    finally:
+        stopped.set()
+        if monitor is not None:
+            monitor.stop()
     return 0
 
 

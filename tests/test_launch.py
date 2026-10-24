@@ -262,6 +262,10 @@ class WindowsFailureTests(LaunchHarness):
         (self.project / "server.py").unlink()
         self.assert_failure_keeps_window("Не найден server.py")
 
+    def test_missing_traffic_module_is_named_and_window_waits(self):
+        (self.project / "bootstrap" / "traffic.py").unlink()
+        self.assert_failure_keeps_window("Не найден bootstrap\\traffic.py")
+
     def test_missing_bootstrap_file_is_named_and_window_waits(self):
         (self.project / "bootstrap" / "start.ps1").unlink()
         self.assert_failure_keeps_window("Missing required file: bootstrap\\start.ps1")
