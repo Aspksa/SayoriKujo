@@ -113,7 +113,7 @@ const fs=require('node:fs/promises');
     await page.locator('[data-tab=checks]').click();
     await page.locator('#run-checks').click();
     await page.waitForFunction(()=>!document.getElementById('run-checks').disabled&&document.getElementById('checks-result').textContent.includes('Пройдено'));
-    if(await page.locator('#checks-list .check-case').count()!==2)throw Error('Automatic checks were not generated');
+    if(await page.locator('#checks-list .check-case').count()!==1)throw Error('Automatic checks were not generated');
     if(screenshots)await page.screenshot({path:path.join(screenshots,'checks.png'),fullPage:true});
     await page.reload();
     await page.waitForFunction(()=>document.querySelector('#chat-project option:checked')?.textContent==='Sakura');

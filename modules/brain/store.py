@@ -296,6 +296,7 @@ class BrainStore:
                 record = dict(row)
                 scope = db.execute("SELECT scope FROM memory_scopes WHERE memory_id=?", (row["id"],)).fetchone()
                 record["scope"] = scope[0] if scope else "global"
+                record['completed_task'] = self.growth.task_completed(db, row['id'])
                 record["projects"] = [dict(project) for project in db.execute("SELECT p.id,p.name FROM memory_projects mp JOIN projects p ON p.id=mp.project_id WHERE mp.memory_id=?", (row["id"],))]
                 record["sources"] = [dict(source) for source in db.execute(
                     "SELECT m.id,m.chat_id,m.content,m.created FROM sources s JOIN messages m ON m.id=s.message_id WHERE s.memory_id=?",
@@ -312,6 +313,8 @@ class BrainStore:
         scope_filter = """m.status='active' AND m.tier!='archive' AND
             (COALESCE(sc.scope,'global')='global' OR EXISTS
             (SELECT 1 FROM memory_projects mp WHERE mp.memory_id=m.id AND mp.project_id=?))"""
+        if hasattr(self, 'growth'):
+            scope_filter += ' AND NOT (' + self.growth.closed_task_sql + ')'
         base = "SELECT m.*,COALESCE(sc.scope,'global') AS scope FROM memories m LEFT JOIN memory_scopes sc ON sc.memory_id=m.id WHERE "
         scope_args = [project_id or '']
         core = db.execute(base + scope_filter + " AND m.tier='core' ORDER BY m.updated DESC LIMIT 12", scope_args).fetchall()

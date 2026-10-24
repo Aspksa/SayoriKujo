@@ -267,13 +267,14 @@ class Learning:
         if not row:
             return None
         entries = [dict(item) for item in db.execute("""SELECT e.*,m.chat_id FROM project_entries e JOIN messages m ON m.id=e.message_id
-                   WHERE e.project_id=? AND (e.status='active' OR e.resolved_by IS NULL) ORDER BY e.created DESC,e.rowid DESC""", (project_id,))]
+                   WHERE e.project_id=? ORDER BY e.created DESC,e.rowid DESC""", (project_id,))]
         seen, filtered = set(), []
         for entry in entries:
             key = (entry["kind"], entry["digest"])
             if key not in seen:
-                filtered.append(entry)
                 seen.add(key)
+                if entry['status'] == 'active' or entry['resolved_by'] is None:
+                    filtered.append(entry)
         return {**dict(row), "entries": filtered[:50]}
 
     def projects(self):
@@ -313,7 +314,8 @@ class Learning:
         records = db.execute("""SELECT DISTINCT m.id,m.content FROM memories m
             JOIN sources s ON s.memory_id=m.id JOIN messages msg ON msg.id=s.message_id
             WHERE msg.chat_id=? AND m.status='active' AND m.tier!='archive' ORDER BY m.updated DESC""", (chat_id,)).fetchall()
-        result["memories"] = [dict(memory) for memory in records if self.scope_matches(db, memory['id'], project_id)][:8]
+        result["memories"] = [dict(memory) for memory in records if self.scope_matches(db, memory['id'], project_id)
+            and not self.store.growth.task_completed(db, memory['id'])][:8]
         return result
 
     def chat_summary(self, chat_id):
@@ -366,8 +368,9 @@ class Learning:
 
     def run_checks(self):
         with self.store.connection() as db:
+            closed_filter = ' AND NOT ('+self.store.growth.closed_task_sql+')' if hasattr(self.store,'growth') else ''
             cases = db.execute("""SELECT c.*,m.content,m.origin FROM memory_checks c JOIN memories m ON m.id=c.memory_id
-                    WHERE m.status='active' AND m.tier!='archive' ORDER BY c.created DESC LIMIT 50""").fetchall()
+                    WHERE m.status='active' AND m.tier!='archive'"""+closed_filter+' ORDER BY c.created DESC LIMIT 50').fetchall()
             details = []
             for case in cases:
                 retrieved = self.store._retrieve(db, case["question"])

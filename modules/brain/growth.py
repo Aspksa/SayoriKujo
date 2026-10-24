@@ -27,6 +27,15 @@ EVENTS_RU = {"branch_created": "Создана ветка развития", "en
              "branch_changed": "Изменено состояние ветки", "question_changed": "Изменено состояние вопроса"}
 CHOICE = re.compile(r"\b(?:выбира\w*|выбра\w*|решили|решил|подходит|берём|берем|оставляем|остановимся|ответ\w*)\b", re.I)
 UUID = re.compile(r"[a-f0-9]{32}\Z")
+CLOSED_TASK_SQL = """m.kind='task' AND EXISTS (
+    SELECT 1 FROM project_entries task JOIN sources source ON source.message_id=task.message_id AND source.memory_id=m.id
+    JOIN project_entries done ON done.id=task.resolved_by
+    WHERE task.kind='todo' AND task.status='resolved' AND task.content=m.content
+    AND EXISTS (SELECT 1 FROM memory_projects p WHERE p.memory_id=m.id AND p.project_id=task.project_id)
+    AND (m.origin='auto' OR m.updated<=done.created)
+    AND done.created>=(SELECT MAX(msg.created) FROM sources s JOIN messages msg ON msg.id=s.message_id WHERE s.memory_id=m.id)
+    AND NOT EXISTS (SELECT 1 FROM project_entries newer JOIN sources s ON s.message_id=newer.message_id AND s.memory_id=m.id
+        WHERE newer.kind='todo' AND newer.content=m.content AND newer.project_id=task.project_id AND newer.created>task.created))"""
 
 
 def text_hash(text):
@@ -42,6 +51,7 @@ def identity(value, optional=False):
 
 
 class Growth:
+    closed_task_sql = CLOSED_TASK_SQL
     def __init__(self, store, backup=False):
         self.store = store
         self.error = None
@@ -95,6 +105,7 @@ class Growth:
             "CREATE TABLE IF NOT EXISTS consolidation_state(id INTEGER PRIMARY KEY CHECK(id=1),last_run TEXT,examined INTEGER NOT NULL DEFAULT 0)",
             "CREATE INDEX IF NOT EXISTS development_branch_entries ON development_entries(branch_id,created)",
             "CREATE INDEX IF NOT EXISTS development_relation_target ON development_relations(target_id)",
+            "CREATE INDEX IF NOT EXISTS project_entry_source ON project_entries(message_id,kind)",
             "CREATE INDEX IF NOT EXISTS growth_event_time ON growth_events(created)",
         ]
         with self.store.connection(write=True) as db:
@@ -177,7 +188,7 @@ class Growth:
         db.execute('INSERT OR IGNORE INTO branch_sources VALUES(?,?)', (branch_id, job['message_id']))
         db.execute('UPDATE development_branches SET updated=MAX(updated,?) WHERE id=?', (source_time, branch_id))
         for item in entries:
-            digest = text_hash((project_id or 'global') + '\0' + item['kind'] + '\0' + normalized(item['quote']))
+            digest = text_hash(branch_id + '\0' + item['kind'] + '\0' + normalized(item['quote']))
             if db.execute('SELECT 1 FROM development_tombstones WHERE digest=?', (digest,)).fetchone():
                 continue
             entry_id = uuid.uuid4().hex
@@ -226,6 +237,9 @@ class Growth:
     def memory_changed(self, db, memory_id, kind='memory_changed'):
         db.execute('DELETE FROM memory_links WHERE first_id=? OR second_id=?', (memory_id, memory_id))
         self.event(db, kind, memory_id=memory_id)
+
+    def task_completed(self, db, memory_id):
+        return bool(db.execute('SELECT 1 FROM memories m WHERE m.id=? AND ('+CLOSED_TASK_SQL+')', (memory_id,)).fetchone())
 
     def use(self, db, memory_id, created):
         db.execute('INSERT INTO memory_usage VALUES(?,1,?) ON CONFLICT(memory_id) DO UPDATE SET count=count+1,last_used=MAX(last_used,excluded.last_used)', (memory_id, created))
@@ -468,6 +482,8 @@ class Growth:
             result['sources'] = [self.source(db, source[0]) for source in db.execute('SELECT message_id FROM sources WHERE memory_id=? ORDER BY rowid DESC LIMIT ?', (entity_id,source_limit))]
             usage = db.execute('SELECT count,last_used FROM memory_usage WHERE memory_id=?', (entity_id,)).fetchone()
             result['usage'] = dict(usage) if usage else {'count': 0, 'last_used': None}
+            if self.task_completed(db, entity_id):
+                result['status'] = 'completed'
         elif kind == 'message':
             result.update(role=data['role'], chat_id=data['chat_id'], status=data['status'])
         elif kind == 'project':
@@ -485,6 +501,9 @@ class Growth:
                 result.update(type=data['kind'], branch_id=data['branch_id'], project_id=branch[0], status=self.entry_state(db, row))
             else:
                 result.update(project_id=data['project_id'], status='active' if data['resolved_by'] is None else data['status'])
+                if db.execute('SELECT 1 FROM project_entries WHERE project_id=? AND kind=? AND digest=? AND created>? LIMIT 1',
+                              (data['project_id'],data['kind'],data['digest'],data['created'])).fetchone():
+                    result['status'] = 'superseded'
         result['sources'] = [source for source in result['sources'] if source]
         result['title'] = result['content'][:85]
         result['type_label'] = KINDS_RU.get(result['type'], result['type'])

@@ -128,6 +128,15 @@ class GrowthTests(unittest.TestCase):
         self.service.store.enqueue(source);self.service.process_one()
         self.assertFalse(any(n['type']=='question' for n in self.service.get('graph',{})['nodes']))
 
+    def test_deleting_question_does_not_suppress_same_quote_in_another_branch(self):
+        chat,project,branch,question,_=self.seed()
+        self.service.post('development-entry',{'id':question['entity_id'],'action':'delete'})
+        self.analyse('Ветка Видео. Какой тембр выбрать?',chat,branch={'name':'Видео','quote':'Ветка Видео.'},
+            entries=[{'kind':'question','quote':'Какой тембр выбрать?'}])
+        questions=[n for n in self.service.get('graph',{})['nodes'] if n['type']=='question']
+        self.assertEqual(len(questions),1)
+        self.assertNotEqual(questions[0]['entity_id'],question['entity_id'])
+
     def test_trace_records_actual_context_detects_edits_and_omits_deleted_nodes(self):
         text='Мне нужен русский интерфейс.'
         first=self.analyse(text,items=[{'kind':'preference','quote':text}])
@@ -328,6 +337,40 @@ class GrowthTests(unittest.TestCase):
         graph=self.service.get('graph',{'focus':[branch['id']]})
         self.assertIn(question['id'],{node['id'] for node in graph['nodes']})
         self.assertTrue(any(edge['source']==branch['id'] and edge['target']==question['id'] for edge in graph['edges']))
+
+    def test_completed_task_leaves_context_but_history_survives_and_new_intent_reactivates(self):
+        text='Проект Sakura. Осталось: добавить поиск.'
+        quote='Осталось: добавить поиск.'
+        chat=self.analyse(text,project={'name':'Sakura','quote':'Проект Sakura.'},
+            items=[{'kind':'task','scope':'project','quote':quote}],progress=[{'kind':'todo','quote':quote}])
+        project=self.service.state()['projects'][0]
+        task=project['entries'][0]
+        memory=self.service.store.memories()[0]
+        completed=self.analyse('Проект Sakura. Сделано: добавлен поиск.',project={'name':'Sakura','quote':'Проект Sakura.'},
+            progress=[{'kind':'done','quote':'Сделано: добавлен поиск.','resolves':[task['id']]}])
+        self.assertEqual(self.service.store.retrieve('Продолжай',chat),[])
+        self.assertEqual(self.service.store.learning.chat_summary(chat)['memories'],[])
+        self.assertTrue(self.service.store.memories()[0]['completed_task'])
+        self.assertEqual(self.service.store.growth.passport('memory:'+memory['id'])['status'],'completed')
+        self.assertTrue(self.service.store.learning.versions(memory['id']))
+        self.assertEqual(self.service.state()['exams']['total'],0)
+        self.service.store.delete_chat(completed)
+        self.assertEqual([m['id'] for m in self.service.store.retrieve('Продолжай',chat)],[memory['id']])
+        self.analyse('Проект Sakura. Сделано: добавлен поиск.',project={'name':'Sakura','quote':'Проект Sakura.'},
+            progress=[{'kind':'done','quote':'Сделано: добавлен поиск.','resolves':[task['id']]}])
+        self.analyse(quote,chat,items=[{'kind':'task','scope':'project','quote':quote}],progress=[{'kind':'todo','quote':quote}])
+        self.assertFalse(self.service.store.memories()[0]['completed_task'])
+        self.assertEqual([m['id'] for m in self.service.store.retrieve('Продолжай',chat)],[memory['id']])
+
+    def test_repeated_task_does_not_reappear_from_older_duplicate_after_completion(self):
+        chat=self.analyse('Проект Sakura. Осталось: добавить поиск.',project={'name':'Sakura','quote':'Проект Sakura.'},
+            items=[{'kind':'task','scope':'project','quote':'Осталось: добавить поиск.'}],progress=[{'kind':'todo','quote':'Осталось: добавить поиск.'}])
+        self.analyse('Осталось: добавить поиск.',chat,items=[{'kind':'task','scope':'project','quote':'Осталось: добавить поиск.'}],
+            progress=[{'kind':'todo','quote':'Осталось: добавить поиск.'}])
+        task=next(e for e in self.service.state()['projects'][0]['entries'] if e['kind']=='todo')
+        self.analyse('Сделано: добавлен поиск.',chat,progress=[{'kind':'done','quote':'Сделано: добавлен поиск.','resolves':[task['id']]}])
+        self.assertFalse(any(e['kind']=='todo' for e in self.service.state()['projects'][0]['entries']))
+        self.assertEqual(self.service.store.retrieve('Что осталось?',chat),[])
 
     def test_consolidation_candidates_and_map_are_bounded(self):
         self.service.settings({'auto_consolidation':False})

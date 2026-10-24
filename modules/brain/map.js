@@ -2,7 +2,7 @@
 (() => {
   const el=id=>document.getElementById(id);
   const labels={active:'Актуально',paused:'Приостановлено',local:'Локально',reported:'Со слов пользователя',
-    open:'Нужно уточнить',resolved:'Решено',selected:'Выбрано',proposed:'Вариант',conflict:'Возможное противоречие',
+    completed:'Задача выполнена · со слов пользователя',open:'Нужно уточнить',resolved:'Решено',selected:'Выбрано',proposed:'Вариант',conflict:'Возможное противоречие',
     superseded:'Заменено',done:'Сохранено',pending:'Ожидание'};
   const relationLabels={contains:'Содержит',develops:'Направление',belongs:'Относится к проекту',remembers:'Сохранено в памяти',
     grounds:'Источник',closes:'Закрывает задачу',supersedes:'Заменяет',answers:'Отвечает на вопрос',selects:'Выбирает вариант',
@@ -128,7 +128,7 @@
     if(data.type==='message')container.append(button('Открыть сообщение',()=>openMessage(data.chat_id,data.entity_id)));
     if(data.sources?.length){container.append(element('h4','Источники · '+(data.source_count||data.sources.length)));
       for(const source of data.sources.slice(0,15)){const details=element('details');details.append(element('summary',date(source.created)),element('div',source.content,'map-source-text'),button('Открыть сообщение',()=>openMessage(source.chat_id,source.id),'quiet'));container.append(details);}
-      if((data.source_count||data.sources.length)>15)container.append(element('p','Показаны последние 15 источников. Остальные доступны в памяти.','muted fine'));
+      if((data.source_count||data.sources.length)>15)container.append(element('p','Показаны последние 15 источников.','muted fine'));
     }else if(data.type!=='brain'&&data.type!=='message')container.append(element('p',data.confirmed?'Основание: ручное подтверждение.':'Исходный источник недоступен.','muted fine'));
     const relations=graph?.edges.filter(edge=>edge.source===data.id||edge.target===data.id)||[];
     if(relations.length){container.append(element('h4','Связи'));
