@@ -49,13 +49,13 @@ function Save-Boot([string]$Status = 'starting', [int]$ExitCode = 0) {
         }
         [IO.File]::WriteAllText($temporary, ($record | ConvertTo-Json -Depth 8), $script:utf8)
         if ([IO.File]::Exists($script:recordPath)) {
-            [IO.File]::Replace($temporary, $script:recordPath, $null)
+            [IO.File]::Replace($temporary, $script:recordPath, [NullString]::Value)
         }
         else { [IO.File]::Move($temporary, $script:recordPath) }
     }
     catch {
         $script:storageReady = $false
-        Write-Host '[Журнал] Историю не удалось сохранить. Запуск продолжается.'
+        Write-Host ('[Журнал] Историю не удалось сохранить. Запуск продолжается: ' + $_.Exception.Message)
     }
     finally {
         if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
@@ -112,7 +112,7 @@ function Finish-Launcher([int]$ExitCode) {
         $current | Add-Member -NotePropertyName duration_is_final -NotePropertyValue $true -Force
         $temporary = $script:recordPath + '.finish.tmp'
         [IO.File]::WriteAllText($temporary, ($current | ConvertTo-Json -Depth 10), $script:utf8)
-        [IO.File]::Replace($temporary, $script:recordPath, $null)
+        [IO.File]::Replace($temporary, $script:recordPath, [NullString]::Value)
     }
     catch { Write-Host '[Журнал] Итог запуска не удалось сохранить.' }
 }
@@ -188,8 +188,9 @@ try {
     exit $serverExit
 }
 catch {
+    $launchError = $_
     Complete-Stage 'error'
-    Write-Launch ('[SayoriKujo] Ошибка: ' + $_.Exception.Message)
+    Write-Launch ('[SayoriKujo] Ошибка: ' + $launchError.Exception.Message)
     Save-Boot 'failed' 1
     exit 1
 }

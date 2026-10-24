@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 import uuid
@@ -160,6 +161,16 @@ class DiagnosticsLaunchTests(launch.LaunchHarness):
         running = self.spawn(self.python_command())
         url = running.url()
         self.assert_healthy(url)
+        deadline = time.monotonic() + 16
+        saved = None
+        while time.monotonic() < deadline:
+            saved = self.records()[0]
+            if (saved.get("duration_seconds", 0) >= 8
+                    and saved.get("traffic", {}).get("local_http", {}).get("received_bytes", 0) > 0):
+                break
+            threading.Event().wait(0.2)
+        else:
+            self.fail("Periodic checkpoint was not saved: " + repr(saved))
         running.close()
         self.assertEqual(self.records()[0]["status"], "running")
         command = self.python_command() + ["--history"]
@@ -202,7 +213,7 @@ class DiagnosticsLaunchTests(launch.LaunchHarness):
         running.process.stdin.flush()
         self.assertEqual(running.process.wait(timeout=10), 1)
         record = self.records()[0]
-        self.assertEqual(record["status"], "failed")
+        self.assertEqual(record["status"], "failed", repr(record) + "\n" + "".join(running.output))
         self.assertEqual(record["stages"][-1]["name"], "python")
         self.assertEqual(record["stages"][-1]["status"], "error")
         log = (self.project / "data" / "logs" / (record["id"] + ".log")).read_text(encoding="utf-8")
@@ -218,6 +229,8 @@ class DiagnosticsLaunchTests(launch.LaunchHarness):
         self.assertEqual([row["name"] for row in records[0]["stages"]],
                          ["preparation", "python", "server", "monitor", "browser"])
         self.assertGreater(records[0]["startup_seconds"], 0)
+        self.assertGreater(records[0]["stages"][1]["seconds"], 0)
+        self.assertNotIn("Историю не удалось сохранить", "".join(running.output))
 
 
 if __name__ == "__main__":
