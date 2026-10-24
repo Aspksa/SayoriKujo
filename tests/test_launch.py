@@ -92,13 +92,13 @@ if not k.AttachConsole(int(sys.argv[1])):
     raise ctypes.WinError(ctypes.get_last_error())
 try:
     k.SetConsoleCtrlHandler(None, True)
-    if not k.GenerateConsoleCtrlEvent(0, 0):
-        raise ctypes.WinError(ctypes.get_last_error())
     k.OpenProcess.restype = wintypes.HANDLE
     handle = k.OpenProcess(0x00100000, False, int(sys.argv[1]))
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())
     try:
+        if not k.GenerateConsoleCtrlEvent(0, 0):
+            raise ctypes.WinError(ctypes.get_last_error())
         k.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
         if k.WaitForSingleObject(handle, 5000) != 0:
             raise RuntimeError('Server did not exit after Ctrl+C')
@@ -120,7 +120,8 @@ class LaunchHarness(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.project = Path(self.temp.name) / "Папка с пробелами" / "Саёри (Кудзё) & Kujо!"
-        shutil.copytree(ROOT, self.project, ignore=shutil.ignore_patterns("__pycache__", ".git"))
+        shutil.copytree(ROOT, self.project,
+                        ignore=shutil.ignore_patterns("__pycache__", ".git", ".venv", "runtime"))
 
     def spawn(self, command, **kwargs):
         running = RunningProcess(command, cwd=self.temp.name, **kwargs)
