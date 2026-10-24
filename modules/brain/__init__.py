@@ -337,7 +337,18 @@ class BrainService:
         if path == "state":
             return self.state()
         if path == 'graph':
+            if query.get('lazy',[''])[0]=='1' or query.get('goal_id'):
+                from .map_data import MapData
+                return MapData(self.store.growth).graph(query.get('project_id',[None])[0],query.get('focus',[None])[0],
+                    query.get('reply_id',[None])[0],query.get('goal_id',[None])[0],query.get('retain',[None])[0])
             return self.store.growth.graph(query.get('project_id', [None])[0], query.get('focus', [None])[0], query.get('reply_id', [None])[0])
+        if path == 'graph-children':
+            from .map_data import MapData
+            raw_limit=query.get('limit',['24'])[0]
+            if not isinstance(raw_limit,str) or not re.fullmatch(r'[1-9][0-9]?',raw_limit):
+                raise BrainError('Некорректный размер страницы карты.')
+            return MapData(self.store.growth).children(query.get('parent',[''])[0],query.get('cursor',[None])[0],int(raw_limit),
+                query.get('project_id',[None])[0],query.get('goal_id',[None])[0])
         if path == 'passport':
             return self.store.growth.passport(query.get('node', [''])[0])
         if path == 'growth-history':

@@ -333,11 +333,11 @@ class BrainHttpTests(unittest.TestCase):
 
     def test_brain_assets_load_but_data_and_python_sources_remain_private(self):
         with self.live_server() as (server,cloud,url):
-            for path in ('brain','brain/ui.js','brain/ui.css','brain/map.js','brain/map.css'):
+            for path in ('brain','brain/ui.js','brain/ui.css','brain/map.js','brain/map.css','brain/map-canvas.js'):
                 with launch.HTTP.open(url+path,timeout=5) as response:
                     self.assertEqual(response.status,200)
                     self.assertIn("script-src 'self'",response.headers['Content-Security-Policy'])
-            for path in ('data/brain/secret.json','data/brain/brain.sqlite3','modules/brain/provider.py','modules/brain/growth.py','data/brain/backups/before-v3.sqlite3','brain/../provider.py'):
+            for path in ('data/brain/secret.json','data/brain/brain.sqlite3','modules/brain/provider.py','modules/brain/growth.py','modules/brain/map_data.py','data/brain/backups/before-v3.sqlite3','brain/../provider.py'):
                 with self.assertRaises(HTTPError) as error:
                     launch.HTTP.open(url+path,timeout=5)
                 self.assertEqual(error.exception.code,404)

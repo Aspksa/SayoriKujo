@@ -11,7 +11,10 @@ class ProjectCloud(tests.FakeCloud):
         if messages[0]["content"] == tests.brain.EXTRACT:
             payload = json.loads(messages[-1]["content"])
             text = payload["user_message"]
-            if text.startswith('Ветка Голос.'):
+            if text.startswith('Большая ветка Голос.'):
+                self.analysis={'items':[],'development':{'branch':{'name':'Голос','quote':'Большая ветка Голос.'},
+                    'entries':[{'kind':'question','quote':quote} for quote in text.splitlines()[1:11]]}}
+            elif text.startswith('Ветка Голос.'):
                 self.analysis = {'items':[{'kind':'preference','scope':'global','slot':'voice.language','quote':'Хочу русскую озвучку.'}],
                     'development':{'branch':{'name':'Голос','quote':'Ветка Голос.'},'entries':[
                         {'kind':'question','quote':'Какой тембр выбрать?'},

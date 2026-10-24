@@ -494,7 +494,7 @@ class Growth:
             result['source_count'] = db.execute('SELECT COUNT(*) FROM branch_sources WHERE branch_id=?', (entity_id,)).fetchone()[0]
             result['sources'] = [self.source(db, source[0]) for source in db.execute('SELECT message_id FROM branch_sources WHERE branch_id=? ORDER BY rowid DESC LIMIT ?', (entity_id,source_limit))]
         else:
-            result['sources'] = [self.source(db, data['message_id'])]
+            result['sources'] = [self.source(db, data['message_id'])] if source_limit else []
             result['kind'] = data['kind']
             if kind == 'entry':
                 branch = db.execute('SELECT project_id FROM development_branches WHERE id=?', (data['branch_id'],)).fetchone()

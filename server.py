@@ -228,12 +228,12 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/brain/"):
             self.brain_api(path, head_only=head_only)
             return
-        if path == "/brain" or path in ("/brain/ui.js", "/brain/ui.css", "/brain/map.js", "/brain/map.css"):
+        if path == "/brain" or path in ("/brain/ui.js", "/brain/ui.css", "/brain/map.js", "/brain/map.css", "/brain/map-canvas.js"):
             name = "ui.html" if path == "/brain" else path.rsplit("/", 1)[1]
             body = (Path(__file__).resolve().parent / "modules" / "brain" / name).read_bytes()
             content_type = {"ui.html": "text/html; charset=utf-8", "ui.js": "text/javascript; charset=utf-8",
                             "ui.css": "text/css; charset=utf-8", "map.js": "text/javascript; charset=utf-8",
-                            "map.css": "text/css; charset=utf-8"}[name]
+                            "map.css": "text/css; charset=utf-8", "map-canvas.js": "text/javascript; charset=utf-8"}[name]
         elif path == "/":
             body, content_type = PAGE, "text/html; charset=utf-8"
         elif path == "/health":

@@ -8,7 +8,7 @@ const progressLabels={goal:'Цель',decision:'Решения',done:'Сдела
 const statuses = {pending:'В очереди',processing:'Анализируется',done:'Готово',failed:'Ошибка анализа',cancelled:'Отменено'};
 function node(tag, text, cls) { const el=document.createElement(tag); if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el; }
 function notice(text, error=false) {$('notice').textContent=text;$('notice').hidden=!text;$('notice').classList.toggle('error',error);}
-async function api(path, body) {const opts={headers:{'X-Sayori-Token':token}};if(body!==undefined){opts.method='POST';opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body);}const response=await fetch('/api/brain/'+path,opts);let data;try{data=await response.json();}catch{throw Error('Сервер не вернул JSON. Проверьте окно BAT.');}if(!response.ok)throw Error(data.error||'Не удалось выполнить действие.');if(data.csrf_token)token=data.csrf_token;return data;}
+async function api(path, body) {const opts={headers:{'X-Sayori-Token':token}};if(body!==undefined){opts.method='POST';opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body);}const response=await fetch('/api/brain/'+path,opts);let data;try{data=await response.json();}catch{throw Error('Сервер не вернул JSON. Проверьте окно BAT.');}if(!response.ok){const error=Error(data.error||'Не удалось выполнить действие.');error.status=response.status;throw error;}if(data.csrf_token)token=data.csrf_token;return data;}
 async function action(fn) {try{await fn();}catch(error){notice(error.message,true);}}
 function tab(name, scope=null){
   activeTab=name;
