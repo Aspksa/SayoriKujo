@@ -251,7 +251,11 @@ class WindowsFailureTests(LaunchHarness):
         venv.EnvBuilder(with_pip=False).create(self.project / ".venv")
         running = self.spawn(self.bat_command(), env=self.isolated_environment())
         self.assert_healthy(running.url())
-        self.assertIn(str(self.project / ".venv" / "Scripts" / "python.exe"), "".join(running.output))
+        selected = next(line.split("Python: ", 1)[1].strip()
+                        for line in running.output if line.startswith("[SayoriKujo] Python: "))
+        # PowerShell expands 8.3 aliases such as RUNNER~1. Compare file identity,
+        # rather than requiring the same spelling of the path in the log.
+        self.assertTrue(os.path.samefile(selected, self.project / ".venv" / "Scripts" / "python.exe"))
 
     def test_missing_server_file_is_named_and_window_waits(self):
         (self.project / "server.py").unlink()
