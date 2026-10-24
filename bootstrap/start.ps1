@@ -128,7 +128,7 @@ try {
     Save-Boot
     Remove-OldDiagnostics
     $serverPath = Join-Path $projectRoot 'server.py'
-    foreach ($required in @('server.py', 'bootstrap\traffic.py', 'bootstrap\diagnostics.py')) {
+    foreach ($required in @('server.py', 'bootstrap\traffic.py', 'bootstrap\diagnostics.py', 'modules\brain\__init__.py', 'modules\brain\store.py', 'modules\brain\provider.py', 'modules\brain\ui.html', 'modules\brain\ui.js', 'modules\brain\ui.css')) {
         if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $required) -PathType Leaf)) {
             throw ('Не найден ' + $required + '. Сначала распакуйте весь архив проекта.')
         }
@@ -155,7 +155,7 @@ try {
         $probe = New-Object System.Diagnostics.Process
         try {
             $probe.StartInfo.FileName = $candidate.Command
-            $probe.StartInfo.Arguments = (($candidate.Prefix + @('-I', '-c', '"import sys,http.server,socket,threading,urllib.request,webbrowser,ctypes;sys.exit(0 if sys.version_info >= (3,10) else 1)"')) -join ' ')
+            $probe.StartInfo.Arguments = (($candidate.Prefix + @('-I', '-c', '"import sys,http.server,socket,threading,urllib.request,webbrowser,ctypes,sqlite3;sys.exit(0 if sys.version_info >= (3,10) else 1)"')) -join ' ')
             $probe.StartInfo.UseShellExecute = $false
             $probe.StartInfo.CreateNoWindow = $true
             $probe.StartInfo.RedirectStandardOutput = $true

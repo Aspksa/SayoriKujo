@@ -5,13 +5,14 @@ import importlib.util
 import html
 import json
 from pathlib import Path
+import secrets
 import socket
 import sys
 import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 from urllib.request import ProxyHandler, build_opener
 
 
@@ -24,6 +25,12 @@ _diagnostics_spec = importlib.util.spec_from_file_location(
     "sayori_diagnostics", Path(__file__).resolve().parent / "bootstrap" / "diagnostics.py")
 diagnostics = importlib.util.module_from_spec(_diagnostics_spec)
 _diagnostics_spec.loader.exec_module(diagnostics)
+_brain_spec = importlib.util.spec_from_file_location(
+    "sayori_brain", Path(__file__).resolve().parent / "modules" / "brain" / "__init__.py",
+    submodule_search_locations=[str(Path(__file__).resolve().parent / "modules" / "brain")])
+brain_module = importlib.util.module_from_spec(_brain_spec)
+sys.modules[_brain_spec.name] = brain_module
+_brain_spec.loader.exec_module(brain_module)
 
 
 PAGE = """<!doctype html>
@@ -36,7 +43,7 @@ color:#382b2e;font:18px system-ui,sans-serif;text-align:center}
 main{padding:32px}h1{font-weight:500;font-size:clamp(32px,7vw,56px);margin:0 0 12px}
 p{color:#796b70;line-height:1.6}small{font-size:14px;color:#907f84}
 </style><main><h1>Саёри Кудзё</h1><p>SayoriKujo запущена.</p>
-<small>Локальный сервер работает.</small><p><a href="/history">История сеансов</a></p></main></html>""".encode("utf-8")
+<small>Локальный сервер работает.</small><p><a href="/brain">Мозги · чат и память</a></p><p><a href="/history">История сеансов</a></p></main></html>""".encode("utf-8")
 
 
 def history_page(store):
@@ -109,7 +116,21 @@ class LocalServer(ThreadingHTTPServer):
         self.traffic = traffic.HttpTraffic()
         self.session_store = diagnostics.SessionStore(Path(__file__).resolve().parent / "data")
         self.journal = None
+        self.brain_service = None
+        self.brain_lock = threading.Lock()
+        self.csrf_token = secrets.token_urlsafe(32)
         super().__init__(*args, **kwargs)
+
+    def get_brain(self):
+        with self.brain_lock:
+            if self.brain_service is None:
+                self.brain_service = brain_module.BrainService(Path(__file__).resolve().parent / "data" / "brain")
+            return self.brain_service
+
+    def server_close(self):
+        if self.brain_service is not None:
+            self.brain_service.close()
+        super().server_close()
 
     def handle_error(self, request, client_address):
         if self.journal is not None:
@@ -143,13 +164,76 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.respond(head_only=True)
 
+    def valid_host(self):
+        return self.headers.get("Host") in (f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}")
+
+    def json_response(self, status, result, head_only=False):
+        body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(body)
+
+    def brain_api(self, path, payload=None, head_only=False):
+        try:
+            service = self.server.get_brain()
+            route = path.removeprefix("/api/brain/")
+            result = (service.post(route, payload) if payload is not None
+                      else service.get(route, parse_qs(urlsplit(self.path).query)))
+            if route == "state":
+                result["csrf_token"] = self.server.csrf_token
+            self.json_response(200, result, head_only)
+        except brain_module.BrainError as error:
+            self.json_response(error.status, {"error": str(error)}, head_only)
+        except Exception:
+            # Do not serialize request bodies, keys or provider exceptions into diagnostics.
+            if self.server.journal is not None:
+                self.server.journal.log("Модуль Мозги: внутренняя ошибка обработки запроса.", "ERROR")
+            self.json_response(503, {"error": "Модуль Мозги временно недоступен. Проверьте доступ к папке data/brain."}, head_only)
+
+    def do_POST(self):
+        if not self.valid_host():
+            self.json_response(403, {"error": "Недопустимый адрес сервера."})
+            return
+        origin = self.headers.get("Origin")
+        if (origin is not None and origin != "http://" + self.headers["Host"]) or not secrets.compare_digest(
+                self.headers.get("X-Sayori-Token", "").encode("utf-8"), self.server.csrf_token.encode("ascii")):
+            self.json_response(403, {"error": "Обновите страницу: проверка локального запроса не пройдена."})
+            return
+        path = urlsplit(self.path).path
+        if not path.startswith("/api/brain/"):
+            self.json_response(404, {"error": "Действие не найдено."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 256 * 1024 or self.headers.get_content_type() != "application/json":
+                raise ValueError()
+            payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict):
+                raise ValueError()
+        except (OSError, ValueError, UnicodeError):
+            self.json_response(400, {"error": "Ожидается JSON размером до 256 КиБ."})
+            return
+        self.brain_api(path, payload)
+
     def respond(self, head_only=False):
-        port = self.server.server_port
-        if self.headers.get("Host") not in (f"127.0.0.1:{port}", f"localhost:{port}"):
+        if not self.valid_host():
             self.send_error(403)
             return
         path = urlsplit(self.path).path
-        if path == "/":
+        if path.startswith("/api/brain/"):
+            self.brain_api(path, head_only=head_only)
+            return
+        if path == "/brain" or path in ("/brain/ui.js", "/brain/ui.css"):
+            name = "ui.html" if path == "/brain" else path.rsplit("/", 1)[1]
+            body = (Path(__file__).resolve().parent / "modules" / "brain" / name).read_bytes()
+            content_type = {"ui.html": "text/html; charset=utf-8", "ui.js": "text/javascript; charset=utf-8",
+                            "ui.css": "text/css; charset=utf-8"}[name]
+        elif path == "/":
             body, content_type = PAGE, "text/html; charset=utf-8"
         elif path == "/health":
             body = json.dumps({"app": "SayoriKujo", "status": "ready"}).encode()
@@ -168,7 +252,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         self.end_headers()
         if not head_only:
             self.wfile.write(body)

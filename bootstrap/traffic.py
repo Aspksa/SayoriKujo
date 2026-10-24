@@ -239,7 +239,7 @@ class TrafficMonitor:
     def start(self):
         self.sample()
         self.console.message("[Трафик] Сеть ПК: все программы на физических адаптерах; текущая скорость, без спидтеста.")
-        self.console.message("[Трафик] HTTP SayoriKujo — локальный обмен с браузером, включая заголовки. Сервер не обращается в интернет.")
+        self.console.message("[Трафик] HTTP SayoriKujo — локальный обмен с браузером. Внешние запросы Cloud.ru входят в сеть ПК.")
         if self.error:
             self.console.message("[Трафик] Сеть ПК недоступна: " + self.error + ". HTTP учитывается отдельно.")
         else:
