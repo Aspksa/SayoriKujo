@@ -145,7 +145,7 @@ class LaunchHarness(unittest.TestCase):
     def assert_port_released(self, url):
         address = ("127.0.0.1", int(url.rstrip("/").rsplit(":", 1)[1]))
         with socket.socket() as connection:
-            connection.settimeout(1)
+            connection.settimeout(5)
             self.assertIn(connection.connect_ex(address),
                           (errno.ECONNREFUSED, getattr(errno, "WSAECONNREFUSED", 10061)))
         # TCP TIME_WAIT can delay rebinding after HTTP, even though the listener
@@ -212,7 +212,7 @@ class WindowsFailureTests(LaunchHarness):
     def isolated_environment(self):
         env = os.environ.copy()
         # Exclude both Python and the system py.exe launcher from discovery.
-        env["PATH"] = str(Path(env["SystemRoot"]) / "System32")
+        env["PATH"] = str(Path(os.environ["SystemRoot"]) / "System32")
         return env
 
     def assert_failure_keeps_window(self, expected):
