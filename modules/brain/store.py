@@ -142,9 +142,14 @@ class BrainStore:
             if not db.execute("SELECT 1 FROM chats WHERE id=?", (identity,)).fetchone():
                 raise BrainError("Разговор не найден.", 404)
             result = []
-            for row in db.execute("SELECT * FROM messages WHERE chat_id=? ORDER BY created, rowid", (identity,)):
+            for row in db.execute("""SELECT m.*, j.id AS job_id, j.status AS job_status,
+                       j.error AS job_error, j.added AS job_added FROM messages m
+                       LEFT JOIN jobs j ON j.message_id=m.id WHERE m.chat_id=? ORDER BY m.created,m.rowid""", (identity,)):
                 record = dict(row)
                 record["used_memory"] = json.loads(record["used_memory"])
+                job_id = record.pop("job_id")
+                status, error, added = (record.pop(field) for field in ("job_status", "job_error", "job_added"))
+                record["memory_job"] = {"id": job_id, "status": status, "error": error, "added": added} if job_id else None
                 result.append(record)
             return result
 
@@ -175,7 +180,7 @@ class BrainStore:
 
     def fail_turn(self, identity, error):
         with self.connection(write=True) as db:
-            db.execute("UPDATE messages SET status='error',error=? WHERE id=?", (error, identity))
+            db.execute("UPDATE messages SET status='error',error=? WHERE id=? AND status='pending'", (error, identity))
 
     def finish_turn(self, identity, answer, model, memories, config):
         with self.connection(write=True) as db:
@@ -272,9 +277,19 @@ class BrainStore:
             db.execute("UPDATE jobs SET status='done',added=?,error=NULL WHERE id=?", (added, job["id"]))
         return added
 
-    def memories(self, query=""):
+    def memories(self, query="", message_id=None, identities=None):
         with self.connection() as db:
-            rows = db.execute("SELECT * FROM memories ORDER BY updated DESC").fetchall()
+            clauses, parameters = [], []
+            if message_id is not None:
+                clauses.append("EXISTS (SELECT 1 FROM sources s WHERE s.memory_id=m.id AND s.message_id=?)")
+                parameters.append(message_id)
+            if identities is not None:
+                if not identities:
+                    return []
+                clauses.append("m.id IN (" + ",".join("?" for _ in identities) + ")")
+                parameters.extend(identities)
+            where = " WHERE " + " AND ".join(clauses) if clauses else ""
+            rows = db.execute("SELECT m.* FROM memories m" + where + " ORDER BY m.updated DESC", parameters).fetchall()
             result = []
             for row in rows:
                 if query and normalized(query) not in normalized(row["content"] + " " + row["note"]):
@@ -347,7 +362,10 @@ class BrainStore:
     def overview(self):
         with self.connection() as db:
             count = lambda table: db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+            analysis = dict.fromkeys(("pending", "processing", "done", "failed", "cancelled"), 0)
+            analysis.update({row[0]: row[1] for row in db.execute("SELECT status,COUNT(*) FROM jobs GROUP BY status")})
             return {"settings": self.config(db),
+                    "analysis": analysis,
                     "chats": [dict(row) for row in db.execute("SELECT * FROM chats ORDER BY created DESC")],
                     "jobs": [dict(row) for row in db.execute("SELECT id,message_id,status,created,error,added FROM jobs ORDER BY created DESC LIMIT 50")],
                     "growth": {"memories": count("memories"), "sources": count("sources"),

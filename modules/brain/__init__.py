@@ -192,7 +192,14 @@ class BrainService:
         if path == "messages":
             return {"messages": self.store.messages(query.get("chat_id", [""])[0])}
         if path == "memories":
-            return {"memories": self.store.memories(query.get("q", [""])[0][:500])}
+            message_id = query.get("message_id", [None])[0]
+            raw_ids = query.get("ids", [None])[0]
+            identities = raw_ids.split(",") if raw_ids is not None else None
+            if (message_id is not None and not re.fullmatch(r"[a-f0-9]{32}", message_id)) or (
+                    identities is not None and (len(identities) > 20 or any(
+                        not re.fullmatch(r"[a-f0-9]{32}", value) for value in identities))):
+                raise BrainError("Некорректный фильтр источников памяти.")
+            return {"memories": self.store.memories(query.get("q", [""])[0][:500], message_id, identities)}
         raise BrainError("Раздел не найден.", 404)
 
     def post(self, path, payload):

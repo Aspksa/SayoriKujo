@@ -8,6 +8,7 @@ import threading
 import time
 import unittest
 import uuid
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request
 
@@ -87,6 +88,65 @@ class BrainTests(unittest.TestCase):
         self.turn(chat_id=chat, request_id=request)
         self.assertEqual(len(self.cloud.calls), 1)
         self.assertEqual(len(self.service.store.messages(chat)), 2)
+
+    def test_read_failure_after_saved_reply_does_not_turn_success_into_failure(self):
+        chat_id = self.service.store.create_chat()
+        request_id = uuid.uuid4().hex
+        payload = {"chat_id": chat_id, "text": "Мне нужен русский интерфейс.", "request_id": request_id}
+        original = self.service.store.messages
+        reads = 0
+
+        def read_once_then_fail(identity):
+            nonlocal reads
+            reads += 1
+            if reads == 2:
+                raise brain.BrainError("Временная ошибка чтения", 503)
+            return original(identity)
+
+        with patch.object(self.service.store, "messages", side_effect=read_once_then_fail):
+            with self.assertRaises(brain.BrainError):
+                self.service.chat(payload)
+        saved = original(chat_id)
+        self.assertEqual([row["status"] for row in saved], ["done", "done"])
+        retry = self.service.chat(payload)
+        self.assertTrue(retry["repeated"])
+        self.assertEqual(len(retry["messages"]), 2)
+        self.assertEqual(len(self.cloud.calls), 1)
+
+    def test_message_reports_memory_job_progress_and_exact_sources(self):
+        chat_id, _, _ = self.turn()
+        source = self.service.store.messages(chat_id)[0]
+        self.assertEqual(source["memory_job"]["status"], "pending")
+        self.assertEqual(self.service.state()["analysis"]["pending"], 1)
+        job = self.service.store.claim_job()
+        self.assertEqual(self.service.store.messages(chat_id)[0]["memory_job"]["status"], "processing")
+        self.service.store.finish_job(job, [{"quote": job["content"], "kind": "preference"}])
+        source = self.service.store.messages(chat_id)[0]
+        self.assertEqual(source["memory_job"]["status"], "done")
+        self.assertEqual(source["memory_job"]["added"], 1)
+        self.assertEqual(self.service.state()["analysis"]["done"], 1)
+        unrelated = self.service.store.edit_memory({"content": "Отдельное ручное воспоминание"})
+        rows = self.service.get("memories", {"message_id": [source["id"]]})["memories"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["sources"][0]["id"], source["id"])
+        self.assertNotEqual(rows[0]["id"], unrelated)
+        selected = self.service.get("memories", {"ids": [unrelated]})["memories"]
+        self.assertEqual([row["id"] for row in selected], [unrelated])
+
+    def test_failed_memory_analysis_is_visible_on_its_message(self):
+        chat_id, _, _ = self.turn()
+        self.cloud.bad_json = True
+        self.service.process_one()
+        user = self.service.store.messages(chat_id)[0]
+        self.assertEqual(user["memory_job"]["status"], "failed")
+        self.assertIn("JSON", user["memory_job"]["error"])
+
+    def test_source_filters_reject_invalid_or_excessive_ids(self):
+        for query in ({"message_id": ["invalid"]}, {"ids": ["' OR 1=1"]},
+                      {"ids": [",".join([uuid.uuid4().hex for _ in range(21)])]}):
+            with self.subTest(query=query), self.assertRaises(brain.BrainError) as error:
+                self.service.get("memories", query)
+            self.assertEqual(error.exception.status, 400)
 
     def test_only_grounded_user_quotes_are_stored(self):
         self.cloud.items = [
