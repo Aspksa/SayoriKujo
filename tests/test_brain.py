@@ -39,8 +39,8 @@ class FakeCloud:
             if self.bad_json:
                 return "not json", {}
             text = json.loads(messages[-1]["content"])["user_message"]
-            items = self.items if self.items is not None else [
-                {"quote": text, "kind": "preference", "slot": "interface.language", "note": "Предпочтение интерфейса"}]
+            items = self.items if self.items is not None else ([] if text.rstrip().endswith('?') else [
+                {"quote": text, "kind": "preference", "slot": "interface.language", "note": "Предпочтение интерфейса"}])
             return json.dumps({"items": items}, ensure_ascii=False), {}
         return "Ответ получен.", {"total_tokens": 10}
 
@@ -105,6 +105,13 @@ class BrainTests(unittest.TestCase):
         rows = self.service.store.memories()
         self.assertEqual(len(rows), 1)
         self.assertEqual(len(rows[0]["sources"]), 2)
+
+    def test_question_is_not_saved_as_fact_even_if_extractor_suggests_it(self):
+        question = "Какой интерфейс мне нужен?"
+        self.cloud.items = [{"quote": question, "kind": "fact"}]
+        self.turn(question)
+        self.service.process_one()
+        self.assertEqual(self.service.store.memories(), [])
 
     def test_delete_memory_prevents_resurrection_on_reanalysis(self):
         chat, _, _ = self.turn()

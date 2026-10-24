@@ -44,7 +44,7 @@ def validate_items(answer, original, key=""):
         kind = item.get("kind")
         slot, note = item.get("slot", ""), item.get("note", "")
         if (not isinstance(quote, str) or not 5 <= len(quote) <= 700 or quote not in original
-                or kind not in KINDS or contains_secret(quote, key)):
+                or quote.rstrip().endswith(("?", "？")) or kind not in KINDS or contains_secret(quote, key)):
             continue
         result.append({"quote": quote, "kind": kind,
                        "slot": slot[:100].casefold() if isinstance(slot, str) else "",
