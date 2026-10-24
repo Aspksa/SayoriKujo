@@ -94,14 +94,18 @@ def open_browser_when_ready(url, stopped):
             if ready:
                 if stopped.is_set():
                     return
-                if not webbrowser.open(url, new=2):
-                    print("[SayoriKujo] Откройте адрес выше в браузере вручную.", flush=True)
-                return
         except (OSError, ValueError):
             stopped.wait(0.1)
+            continue
+        if not ready:
+            stopped.wait(0.1)
+            continue
+        try:
+            if not webbrowser.open(url, new=2):
+                print(f"[SayoriKujo] Откройте адрес в браузере вручную: {url}", flush=True)
         except Exception as error:
-            print(f"[SayoriKujo] Не удалось открыть браузер: {error}. Откройте адрес вручную.", flush=True)
-            return
+            print(f"[SayoriKujo] Не удалось открыть браузер: {error}. Откройте вручную: {url}", flush=True)
+        return
     if not stopped.is_set():
         print("[SayoriKujo] Браузер не открыт: сервер не подтвердил готовность.", flush=True)
 

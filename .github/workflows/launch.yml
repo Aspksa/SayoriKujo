@@ -10,9 +10,17 @@ jobs:
           - os: windows-latest
             python: '3.13'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        id: old-python
+        with:
+          python-version: '3.9'
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - run: python -m unittest discover -s tests -v
+        env:
+          SAYORI_TEST_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
