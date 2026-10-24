@@ -239,6 +239,7 @@ class Learning:
         if project_id:
             self.progress(db, project_id, job, analysis.get("progress", []), source_created)
         self.refresh_summary(db, job["chat_id"])
+        self.store.growth.sync_analysis(db, job, analysis)
         return added
 
     def progress(self, db, project_id, job, entries, created):
@@ -335,7 +336,7 @@ class Learning:
             focus = self.focus(db, chat_id, text)
             project = self.board(db, focus) if focus else None
             if project:
-                project = {"name": project["name"], "entries": [{"kind": entry["kind"], "quote": entry["content"],
+                project = {"id": project["id"], "name": project["name"], "entries": [{"id": entry["id"], "kind": entry["kind"], "quote": entry["content"],
                            "source_message": entry["message_id"]} for entry in project["entries"][:8]]}
             summary = self.summary(db, chat_id)
             # Project switching does not import the previous project's handoff.
@@ -370,11 +371,13 @@ class Learning:
             details = []
             for case in cases:
                 retrieved = self.store._retrieve(db, case["question"])
-                found = case["memory_id"] in {row["id"] for row in retrieved}
+                direct = {row["id"] for row in retrieved}
+                equivalents = self.store.growth.equivalents(db, case['memory_id']) if hasattr(self.store, 'growth') else {case['memory_id']}
+                found = bool(equivalents & direct)
                 grounded = case["origin"] == "manual" or bool(db.execute("""SELECT 1 FROM sources s JOIN messages m ON m.id=s.message_id
                            WHERE s.memory_id=? AND instr(m.content,?)>0""", (case["memory_id"], case["content"])).fetchone())
                 details.append({"case_id": case["id"], "memory_id": case["memory_id"], "retrieved": found,
-                                "grounded": grounded, "passed": found and grounded})
+                                "grounded": grounded, "passed": found and grounded, 'grouped': found and case['memory_id'] not in direct})
         with self.store.connection(write=True) as db:
             db.execute("INSERT INTO memory_check_runs VALUES(?,?,?,?,?)", (uuid.uuid4().hex, now(), len(details),
                        sum(item["passed"] for item in details), json.dumps(details)))
@@ -448,7 +451,9 @@ class Learning:
             self.store._index(db, identity, snapshot["content"])
             self.version(db, identity, "Восстановлено пользователем")
             self.check_case(db, identity, project_id=(snapshot.get("projects") or [None])[0])
+            self.store.growth.memory_changed(db, identity, 'memory_restored')
         self.safe_checks()
+        self.store.growth.safe_consolidate(force=True)
         return identity
 
     def set_project(self, chat_id, project_id):

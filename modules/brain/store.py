@@ -34,7 +34,7 @@ def terms(text):
 
 
 DEFAULTS = {"endpoint": ENDPOINTS[0], "model": "", "memory_model": "", "auto_memory": True,
-            "revision": 0, "models": []}
+            "revision": 0, "models": [], "auto_consolidation": True}
 
 
 class BrainStore:
@@ -78,6 +78,8 @@ class BrainStore:
         from .learning import Learning
         self.learning = Learning(self)
         self.learning.migrate(backup=had_database)
+        from .growth import Growth
+        self.growth = Growth(self, backup=had_database)
         with self.connection() as db:
             needs_checks = (db.execute("SELECT 1 FROM memory_checks LIMIT 1").fetchone()
                             and not db.execute("SELECT 1 FROM memory_check_runs LIMIT 1").fetchone())
@@ -112,13 +114,15 @@ class BrainStore:
     def configure(self, changes, secret_action=None):
         with self.connection(write=True) as db:
             config = self.config(db)
-            for name in ("endpoint", "model", "memory_model", "auto_memory"):
+            for name in ("endpoint", "model", "memory_model", "auto_memory", "auto_consolidation"):
                 if name in changes:
                     config[name] = changes[name]
             if config["endpoint"] not in ENDPOINTS:
                 raise BrainError("Выберите адрес API Cloud.ru из списка.")
             if not isinstance(config["auto_memory"], bool):
                 raise BrainError("Некорректный режим автоматической памяти.")
+            if not isinstance(config["auto_consolidation"], bool):
+                raise BrainError("Некорректный режим консолидации.")
             for field in ("model", "memory_model"):
                 if not isinstance(config[field], str) or len(config[field]) > 250:
                     raise BrainError("Некорректное название модели.")
@@ -193,7 +197,7 @@ class BrainStore:
         with self.connection(write=True) as db:
             db.execute("UPDATE messages SET status='error',error=? WHERE id=? AND status='pending'", (error, identity))
 
-    def finish_turn(self, identity, answer, model, memories, config):
+    def finish_turn(self, identity, answer, model, memories, config, trace=None):
         with self.connection(write=True) as db:
             source = db.execute("SELECT * FROM messages WHERE id=?", (identity,)).fetchone()
             if not source:
@@ -201,8 +205,10 @@ class BrainStore:
             if source["status"] != "pending":
                 raise BrainError("Этот запрос уже завершён или был прерван.", 409)
             db.execute("UPDATE messages SET status='done' WHERE id=?", (identity,))
+            reply_id = uuid.uuid4().hex
             db.execute("INSERT INTO messages(id,chat_id,role,content,created,model,used_memory) VALUES(?,?,?,?,?,?,?)",
-                       (uuid.uuid4().hex, source["chat_id"], "assistant", answer, now(), model, json.dumps(memories)))
+                       (reply_id, source["chat_id"], "assistant", answer, now(), model, json.dumps(memories)))
+            self.growth.record_turn(db, reply_id, identity, trace or {'memory_ids': memories})
             if config["auto_memory"]:
                 self._enqueue(db, identity, config, manual=False)
             self.learning.refresh_summary(db, source["chat_id"])
@@ -325,8 +331,9 @@ class BrainStore:
             if score:
                 ranked.append((score, row))
         ranked.sort(key=lambda pair: (pair[0], pair[1]['updated']), reverse=True)
-        return [{"id": row['id'], "content": row['content'], "origin": row['origin']}
-                for row in list(core) + [row for score, row in ranked[:8]]]
+        records = [{"id": row['id'], "content": row['content'], "origin": row['origin']}
+                   for row in list(core) + [row for score, row in ranked[:8]]]
+        return self.growth.collapse(db, records) if hasattr(self, 'growth') else records
 
     def edit_memory(self, payload):
         identity = payload.get("id") or uuid.uuid4().hex
@@ -371,7 +378,9 @@ class BrainStore:
                 db.execute("INSERT INTO memory_projects VALUES(?,?)", (identity, project_id))
             self.learning.version(db, identity, "Подтверждено пользователем")
             self.learning.check_case(db, identity, project_id=project_id)
+            self.growth.memory_changed(db, identity)
         self.learning.safe_checks()
+        self.growth.safe_consolidate(force=True)
         return identity
 
     def delete_memory(self, identity):
@@ -381,7 +390,9 @@ class BrainStore:
                 db.execute("INSERT OR IGNORE INTO tombstones VALUES(?)", (row[0],))
                 db.execute("DELETE FROM memories WHERE id=?", (identity,))
             self.learning.cleanup(db)
+            self.growth.cleanup(db)
         self.learning.safe_checks()
+        self.growth.safe_consolidate(force=True)
 
     def delete_chat(self, identity):
         with self.connection(write=True) as db:
@@ -391,8 +402,10 @@ class BrainStore:
             for memory_id in ids:
                 db.execute("DELETE FROM memories WHERE id=? AND origin='auto' AND NOT EXISTS (SELECT 1 FROM sources WHERE memory_id=?)",
                            (memory_id, memory_id))
+            self.growth.cleanup(db)
             self.learning.cleanup(db)
         self.learning.safe_checks()
+        self.growth.safe_consolidate(force=True)
 
     def overview(self):
         with self.connection() as db:

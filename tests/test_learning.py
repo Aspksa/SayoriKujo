@@ -272,17 +272,17 @@ class LearningTests(unittest.TestCase):
         self.assertEqual(self.service.store.learning.chat_summary(chat)["memories"], [])
         self.assertEqual(self.service.store.learning.versions(identity), [])
 
-    def test_upgrade_preserves_old_chat_memory_key_and_creates_one_backup(self):
+    def test_legacy_upgrade_preserves_data_and_creates_backup_for_each_schema(self):
         self.turn()
         self.service.process_one()
         memory_id = self.service.store.memories()[0]["id"]
         key_before = (self.root / "secret.json").read_bytes()
         self.service.close()
         with closing(sqlite3.connect(self.service.store.path)) as db:
-            new_tables = ("projects", "project_sources", "chat_projects", "analysis_contexts", "memory_scopes", "memory_projects",
-                          "project_entries", "memory_series", "memory_versions", "chat_summaries", "memory_checks", "memory_check_runs")
-            for table in new_tables:
-                db.execute("DROP TABLE " + table)
+            legacy = {"settings", "chats", "messages", "memories", "sources", "memory_terms", "tombstones", "jobs"}
+            for table in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+                if table[0] not in legacy:
+                    db.execute('DROP TABLE "' + table[0] + '"')
             db.execute("PRAGMA user_version=0")
         reopened = brain.BrainService(self.root, self.cloud.factory, start_worker=False)
         self.addCleanup(reopened.close)
@@ -290,13 +290,14 @@ class LearningTests(unittest.TestCase):
         self.assertEqual(reopened.store.memories()[0]["id"], memory_id)
         self.assertTrue(reopened.store.learning.versions(memory_id))
         backups = list((self.root / "backups").glob("*.sqlite3"))
-        self.assertEqual(len(backups), 1)
+        self.assertEqual(len(backups), 2)
+        backups = list((self.root / "backups").glob("before-v2-*.sqlite3"))
         with closing(sqlite3.connect(backups[0])) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM memories").fetchone()[0], 1)
             self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 0)
         another = brain.BrainService(self.root, self.cloud.factory, start_worker=False)
         self.addCleanup(another.close)
-        self.assertEqual(len(list((self.root / "backups").glob("*.sqlite3"))), 1)
+        self.assertEqual(len(list((self.root / "backups").glob("*.sqlite3"))), 2)
         self.assertEqual(len(another.store.messages(another.store.overview()["chats"][0]["id"])), 2)
 
 

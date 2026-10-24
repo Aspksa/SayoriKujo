@@ -11,7 +11,19 @@ class ProjectCloud(tests.FakeCloud):
         if messages[0]["content"] == tests.brain.EXTRACT:
             payload = json.loads(messages[-1]["content"])
             text = payload["user_message"]
-            if text.startswith("Проект Sakura."):
+            if text.startswith('Ветка Голос.'):
+                self.analysis = {'items':[{'kind':'preference','scope':'global','slot':'voice.language','quote':'Хочу русскую озвучку.'}],
+                    'development':{'branch':{'name':'Голос','quote':'Ветка Голос.'},'entries':[
+                        {'kind':'question','quote':'Какой тембр выбрать?'},
+                        {'kind':'option','quote':'Вариант: низкий голос.'},
+                        {'kind':'option','quote':'Вариант: мягкий голос.'}]}}
+            elif text == 'Выбираю мягкий голос.':
+                entries=(payload.get('development_context') or {}).get('entries',[])
+                self.analysis={'items':[],'development':{'entries':[{'kind':'choice','quote':text,
+                    'targets':[e['id'] for e in entries if e['kind']=='question' or e['quote']=='Вариант: мягкий голос.']}]}}
+            elif text.startswith('Я предпочитаю короткие ответы'):
+                self.analysis={'items':[{'kind':'preference','scope':'global','quote':text,'slot':''}]}
+            elif text.startswith("Проект Sakura."):
                 self.analysis = {"items": [{"quote": "Осталось: добавить поиск.", "kind": "task", "scope": "project"}],
                     "project": {"name": "Sakura", "quote": "Проект Sakura."}, "progress": [
                         {"kind": "goal", "quote": "Цель: сделать помощницу."},
