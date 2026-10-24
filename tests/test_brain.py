@@ -25,6 +25,7 @@ class FakeCloud:
         self.calls = []
         self.items = None
         self.bad_json = False
+        self.analysis = None
 
     def factory(self, endpoint, key):
         self.endpoint, self.key = endpoint, key
@@ -40,6 +41,9 @@ class FakeCloud:
             if self.bad_json:
                 return "not json", {}
             text = json.loads(messages[-1]["content"])["user_message"]
+            if self.analysis is not None:
+                value = self.analysis(json.loads(messages[-1]["content"])) if callable(self.analysis) else self.analysis
+                return json.dumps(value, ensure_ascii=False), {}
             items = self.items if self.items is not None else ([] if text.rstrip().endswith('?') else [
                 {"quote": text, "kind": "preference", "slot": "interface.language", "note": "Предпочтение интерфейса"}])
             return json.dumps({"items": items}, ensure_ascii=False), {}

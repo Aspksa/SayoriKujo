@@ -42,6 +42,7 @@ class BrainStore:
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
         self.path = root / "brain.sqlite3"
+        had_database = self.path.exists()
         with self.connection() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
@@ -74,6 +75,14 @@ class BrainStore:
                     manual INTEGER NOT NULL DEFAULT 0, error TEXT, added INTEGER NOT NULL DEFAULT 0);
             """)
             db.execute("INSERT OR IGNORE INTO settings VALUES(1, ?)", (json.dumps(DEFAULTS),))
+        from .learning import Learning
+        self.learning = Learning(self)
+        self.learning.migrate(backup=had_database)
+        with self.connection() as db:
+            needs_checks = (db.execute("SELECT 1 FROM memory_checks LIMIT 1").fetchone()
+                            and not db.execute("SELECT 1 FROM memory_check_runs LIMIT 1").fetchone())
+        if needs_checks:
+            self.learning.safe_checks()
 
     @contextmanager
     def connection(self, write=False):
@@ -150,6 +159,8 @@ class BrainStore:
                 job_id = record.pop("job_id")
                 status, error, added = (record.pop(field) for field in ("job_status", "job_error", "job_added"))
                 record["memory_job"] = {"id": job_id, "status": status, "error": error, "added": added} if job_id else None
+                context = db.execute("SELECT a.*,p.name FROM analysis_contexts a LEFT JOIN projects p ON p.id=a.project_id WHERE a.message_id=?", (record["id"],)).fetchone()
+                record["project_context"] = dict(context) if context else None
                 result.append(record)
             return result
 
@@ -194,6 +205,7 @@ class BrainStore:
                        (uuid.uuid4().hex, source["chat_id"], "assistant", answer, now(), model, json.dumps(memories)))
             if config["auto_memory"]:
                 self._enqueue(db, identity, config, manual=False)
+            self.learning.refresh_summary(db, source["chat_id"])
 
     def _enqueue(self, db, message_id, config, manual):
         row = db.execute("SELECT role FROM messages WHERE id=?", (message_id,)).fetchone()
@@ -250,39 +262,20 @@ class BrainStore:
             if config["revision"] != job["revision"] or (not config["auto_memory"] and not job["manual"]):
                 db.execute("UPDATE jobs SET status='cancelled',error=? WHERE id=?", ("Настройки изменились.", job["id"]))
                 return 0
-            for item in items:
-                quote = item["quote"]
-                digest = fingerprint(quote)
-                if db.execute("SELECT 1 FROM tombstones WHERE digest=?", (digest,)).fetchone():
-                    continue
-                prior = db.execute("SELECT id FROM memories WHERE digest=?", (digest,)).fetchone()
-                if prior:
-                    identity = prior[0]
-                else:
-                    identity = uuid.uuid4().hex
-                    slot = item.get("slot", "")
-                    conflict = bool(slot and db.execute(
-                        "SELECT 1 FROM memories WHERE slot=? AND kind=? AND status IN ('active','conflict')",
-                        (slot, item["kind"])).fetchone())
-                    if conflict:
-                        db.execute("UPDATE memories SET status='conflict',updated=? WHERE slot=? AND kind=? AND origin='auto' AND status IN ('active','conflict')",
-                                   (now(), slot, item["kind"]))
-                    db.execute("""INSERT INTO memories(id,content,digest,kind,tier,slot,note,origin,status,created,updated)
-                               VALUES(?,?,?,?,'long',?,?,'auto',?,?,?)""",
-                               (identity, quote, digest, item["kind"], slot, item.get("note", ""),
-                                "conflict" if conflict else "active", now(), now()))
-                    self._index(db, identity, quote)
-                    added += 1
-                db.execute("INSERT OR IGNORE INTO sources VALUES(?,?)", (identity, job["message_id"]))
+            analysis = items if isinstance(items, dict) else {"items": items, "progress": [], "project": None}
+            added = self.learning.apply_analysis(db, job, analysis)
             db.execute("UPDATE jobs SET status='done',added=?,error=NULL WHERE id=?", (added, job["id"]))
         return added
 
-    def memories(self, query="", message_id=None, identities=None):
+    def memories(self, query="", message_id=None, identities=None, project_id=None):
         with self.connection() as db:
             clauses, parameters = [], []
             if message_id is not None:
                 clauses.append("EXISTS (SELECT 1 FROM sources s WHERE s.memory_id=m.id AND s.message_id=?)")
                 parameters.append(message_id)
+            if project_id is not None:
+                clauses.append("EXISTS (SELECT 1 FROM memory_projects mp WHERE mp.memory_id=m.id AND mp.project_id=?)")
+                parameters.append(project_id)
             if identities is not None:
                 if not identities:
                     return []
@@ -295,23 +288,45 @@ class BrainStore:
                 if query and normalized(query) not in normalized(row["content"] + " " + row["note"]):
                     continue
                 record = dict(row)
+                scope = db.execute("SELECT scope FROM memory_scopes WHERE memory_id=?", (row["id"],)).fetchone()
+                record["scope"] = scope[0] if scope else "global"
+                record["projects"] = [dict(project) for project in db.execute("SELECT p.id,p.name FROM memory_projects mp JOIN projects p ON p.id=mp.project_id WHERE mp.memory_id=?", (row["id"],))]
                 record["sources"] = [dict(source) for source in db.execute(
                     "SELECT m.id,m.chat_id,m.content,m.created FROM sources s JOIN messages m ON m.id=s.message_id WHERE s.memory_id=?",
                     (row["id"],))]
                 result.append(record)
             return result
 
-    def retrieve(self, query):
+    def retrieve(self, query, chat_id=None):
         with self.connection() as db:
-            core = db.execute("SELECT id,content,origin FROM memories WHERE tier='core' AND status='active' ORDER BY updated DESC LIMIT 12").fetchall()
-            tokens = list(terms(query))[:64]
-            matching = []
-            if tokens:
-                placeholders = ",".join("?" for _ in tokens)
-                matching = db.execute(f"""SELECT m.id,m.content,m.origin,COUNT(*) AS rank FROM memories m
-                    JOIN memory_terms t ON t.memory_id=m.id WHERE t.term IN ({placeholders})
-                    AND m.tier='long' AND m.status='active' GROUP BY m.id ORDER BY rank DESC,m.updated DESC LIMIT 8""", tokens).fetchall()
-            return [{"id": row["id"], "content": row["content"], "origin": row["origin"]} for row in [*core, *matching]]
+            return self._retrieve(db, query, chat_id)
+
+    def _retrieve(self, db, query, chat_id=None):
+        project_id = self.learning.focus(db, chat_id, query)
+        scope_filter = """m.status='active' AND m.tier!='archive' AND
+            (COALESCE(sc.scope,'global')='global' OR EXISTS
+            (SELECT 1 FROM memory_projects mp WHERE mp.memory_id=m.id AND mp.project_id=?))"""
+        base = "SELECT m.*,COALESCE(sc.scope,'global') AS scope FROM memories m LEFT JOIN memory_scopes sc ON sc.memory_id=m.id WHERE "
+        scope_args = [project_id or '']
+        core = db.execute(base + scope_filter + " AND m.tier='core' ORDER BY m.updated DESC LIMIT 12", scope_args).fetchall()
+        pool = {}
+        tokens = list(terms(query))[:64]
+        if tokens:
+            sql = base + scope_filter + " AND m.tier='long' AND m.id IN (SELECT memory_id FROM memory_terms WHERE term IN (" + ','.join('?' for _ in tokens) + ")) ORDER BY m.updated DESC LIMIT 100"
+            pool.update({row['id']: row for row in db.execute(sql, scope_args + tokens)})
+        fallback = db.execute(base + scope_filter + " AND m.tier='long' AND (m.kind='preference' OR sc.scope='project') ORDER BY m.updated DESC LIMIT 16", scope_args).fetchall()
+        pool.update({row['id']: row for row in fallback})
+        ranked = []
+        for row in pool.values():
+            overlap = len(set(tokens) & terms(row['content']))
+            in_project = bool(project_id and row['scope'] == 'project')
+            preference = row['kind'] == 'preference' and row['scope'] == 'global'
+            score = overlap * 5 + (3 if in_project else 0) + (1 if preference else 0)
+            if score:
+                ranked.append((score, row))
+        ranked.sort(key=lambda pair: (pair[0], pair[1]['updated']), reverse=True)
+        return [{"id": row['id'], "content": row['content'], "origin": row['origin']}
+                for row in list(core) + [row for score, row in ranked[:8]]]
 
     def edit_memory(self, payload):
         identity = payload.get("id") or uuid.uuid4().hex
@@ -320,20 +335,28 @@ class BrainStore:
         if not isinstance(content, str) or not 3 <= len(content.strip()) <= 1500 or kind not in KINDS or tier not in TIERS:
             raise BrainError("Проверьте текст, вид и уровень памяти.")
         content = content.strip()
-        digest = fingerprint(content)
         with self.connection(write=True) as db:
             old = db.execute("SELECT * FROM memories WHERE id=?", (identity,)).fetchone()
+            previous = self.learning.snapshot(db, identity) if old else None
+            project_id = payload.get("project_id", (previous.get("projects") or [None])[0] if previous else None)
+            if project_id and not db.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone():
+                raise BrainError("Проект не найден.", 404)
+            scope = "project" if project_id else "global"
+            digest = self.learning.digest(content, scope, project_id)
             duplicate = db.execute("SELECT id FROM memories WHERE digest=? AND id!=?", (digest, identity)).fetchone()
             if duplicate:
                 raise BrainError("Такая запись уже есть в памяти.", 409)
             if old:
+                self.learning.version(db, identity, "До ручного исправления")
                 if old["digest"] != digest:
                     db.execute("INSERT OR IGNORE INTO tombstones VALUES(?)", (old["digest"],))
                 db.execute("UPDATE memories SET content=?,digest=?,kind=?,tier=?,note='',origin='manual',confirmed=1,status='active',updated=? WHERE id=?",
                            (content, digest, kind, tier, now(), identity))
                 if old["slot"]:
-                    db.execute("UPDATE memories SET status='superseded' WHERE slot=? AND kind=? AND id!=?",
-                               (old["slot"], kind, identity))
+                    for other in db.execute("SELECT id FROM memories WHERE slot=? AND kind=? AND id!=?", (old["slot"], kind, identity)).fetchall():
+                        if self.learning.same_scope(db, other["id"], scope, project_id):
+                            self.learning.version(db, other["id"], "До выбора актуального факта")
+                            db.execute("UPDATE memories SET status='superseded' WHERE id=?", (other["id"],))
             else:
                 if payload.get("id"):
                     raise BrainError("Запись памяти не найдена.", 404)
@@ -341,6 +364,14 @@ class BrainStore:
                            (identity, content, digest, kind, tier, now(), now()))
             db.execute("DELETE FROM tombstones WHERE digest=?", (digest,))
             self._index(db, identity, content)
+            self.learning.ensure_memory(db, identity)
+            db.execute("UPDATE memory_scopes SET scope=? WHERE memory_id=?", (scope, identity))
+            db.execute("DELETE FROM memory_projects WHERE memory_id=?", (identity,))
+            if project_id:
+                db.execute("INSERT INTO memory_projects VALUES(?,?)", (identity, project_id))
+            self.learning.version(db, identity, "Подтверждено пользователем")
+            self.learning.check_case(db, identity, project_id=project_id)
+        self.learning.safe_checks()
         return identity
 
     def delete_memory(self, identity):
@@ -349,6 +380,8 @@ class BrainStore:
             if row:
                 db.execute("INSERT OR IGNORE INTO tombstones VALUES(?)", (row[0],))
                 db.execute("DELETE FROM memories WHERE id=?", (identity,))
+            self.learning.cleanup(db)
+        self.learning.safe_checks()
 
     def delete_chat(self, identity):
         with self.connection(write=True) as db:
@@ -358,6 +391,8 @@ class BrainStore:
             for memory_id in ids:
                 db.execute("DELETE FROM memories WHERE id=? AND origin='auto' AND NOT EXISTS (SELECT 1 FROM sources WHERE memory_id=?)",
                            (memory_id, memory_id))
+            self.learning.cleanup(db)
+        self.learning.safe_checks()
 
     def overview(self):
         with self.connection() as db:

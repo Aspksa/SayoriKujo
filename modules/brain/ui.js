@@ -1,9 +1,10 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let state = null, token = '', chatId = null, memoryRows = [], busy = false, loadingChat = false, activeTab = 'chat';
-let refreshVersion = 0, chatReadVersion = 0, memoryReadVersion = 0, memoryScope = null, lastAttempt = null;
+let refreshVersion = 0, chatReadVersion = 0, memoryReadVersion = 0, memoryScope = null, lastAttempt = null, currentProject = null, historyMemoryId = null;
 const kinds = {fact:'Сведения',preference:'Предпочтение',project:'Проект',task:'Задача'};
 const tiers = {long:'Долговременная',core:'Постоянное ядро',archive:'Архивная'};
+const progressLabels={goal:'Цель',decision:'Решения',done:'Сделано · со слов пользователя',todo:'Осталось',stopped:'Место остановки'};
 const statuses = {pending:'В очереди',processing:'Анализируется',done:'Готово',failed:'Ошибка анализа',cancelled:'Отменено'};
 function node(tag, text, cls) { const el=document.createElement(tag); if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el; }
 function notice(text, error=false) {$('notice').textContent=text;$('notice').hidden=!text;$('notice').classList.toggle('error',error);}
@@ -13,19 +14,19 @@ function tab(name, scope=null){
   activeTab=name;
   for(const el of document.querySelectorAll('.tab'))el.hidden=el.id!=='tab-'+name;
   for(const el of document.querySelectorAll('[data-tab]'))el.classList.toggle('selected',el.dataset.tab===name);
-  $('page-title').textContent={chat:'Разговоры',memory:'Память',settings:'Cloud.ru'}[name];
+  $('page-title').textContent={chat:'Разговоры',memory:'Память',projects:'Проекты',profile:'Профиль',checks:'Проверки памяти',settings:'Cloud.ru'}[name];
   if(name==='memory'){
     memoryScope=scope;$('memory-scope').hidden=!scope;
-    $('memory-scope-label').textContent=scope?(scope.message_id?'Память из выбранного сообщения':'Текущие записи, связанные с ответом'):'';
+    $('memory-scope-label').textContent=scope?(scope.project_id?'Память проекта '+(scope.project_name||''):scope.message_id?'Память из выбранного сообщения':'Текущие записи, связанные с ответом'):'';
     if(scope){$('memory-search').value='';$('memory-filter').value='';}
     action(loadMemories);
   }
 }
 function fillSettings(){const c=state.settings;$('endpoint').value=c.endpoint;$('model').value=c.model;$('memory-model').value=c.memory_model;$('auto-memory').checked=c.auto_memory;$('key-status').textContent=(state.has_key?'Ключ сохранён. ':'Ключ не сохранён. ')+state.protection+(state.key_error?' · '+state.key_error:'');const list=$('model-list');list.replaceChildren(node('option','Выберите модель из списка'));list.firstChild.value='';for(const row of c.models||[]){const option=node('option',row.id+(row.chat_candidate?'':' · не текстовый чат'));option.value=row.id;option.disabled=!row.chat_candidate;list.append(option);}list.value=c.model;}
-function renderState(){if(!state)return;for(const button of document.querySelectorAll('.analyze-memory'))button.disabled=busy||loadingChat;$('new-chat').disabled=busy||loadingChat;$('send').disabled=busy||loadingChat;const g=state.growth;$('n-memory').textContent=g.memories;$('n-sources').textContent=g.sources;$('n-messages').textContent=g.messages;$('n-processed').textContent=g.processed;$('connection').textContent=state.has_key&&state.settings.model?'Cloud.ru настроен':'Настройте Cloud.ru';$('chats').replaceChildren();for(const chat of state.chats){const button=node('button',chat.title,'chat-item'+(chat.id===chatId?' active':''));button.disabled=busy||loadingChat;button.onclick=()=>action(()=>selectChat(chat.id));$('chats').append(button);}const selected=state.chats.find(c=>c.id===chatId);$('chat-title').textContent=selected?selected.title:'Новый разговор';$('delete-chat').disabled=!selected||busy||loadingChat;$('jobs').replaceChildren();for(const job of state.jobs){const row=node('div',undefined,'job');row.append(node('span',statuses[job.status]+(job.status==='done'?' · новых записей: '+job.added:'')));if(job.error)row.append(node('span',job.error,'error'));$('jobs').append(row);}}
+function renderState(){if(!state)return;for(const button of document.querySelectorAll('.analyze-memory'))button.disabled=busy||loadingChat;$('new-chat').disabled=busy||loadingChat;$('send').disabled=busy||loadingChat;const g=state.growth;$('n-memory').textContent=g.memories;$('n-sources').textContent=g.sources;$('n-messages').textContent=g.messages;$('n-processed').textContent=g.processed;$('connection').textContent=state.has_key&&state.settings.model?'Cloud.ru настроен':'Настройте Cloud.ru';$('chats').replaceChildren();for(const chat of state.chats){const button=node('button',chat.title,'chat-item'+(chat.id===chatId?' active':''));button.disabled=busy||loadingChat;button.onclick=()=>action(()=>selectChat(chat.id));$('chats').append(button);}const selected=state.chats.find(c=>c.id===chatId);$('chat-title').textContent=selected?selected.title:'Новый разговор';$('delete-chat').disabled=!selected||busy||loadingChat;$('jobs').replaceChildren();for(const job of state.jobs){const row=node('div',undefined,'job');row.append(node('span',statuses[job.status]+(job.status==='done'?' · новых записей: '+job.added:'')));if(job.error)row.append(node('span',job.error,'error'));$('jobs').append(row);}renderLearning();}
 function applyState(next, settings=false){
   state=next;
-  if(chatId&&!busy&&!loadingChat&&!state.chats.some(c=>c.id===chatId)){chatId=null;renderMessages([]);}
+  if(chatId&&!busy&&!loadingChat&&!state.chats.some(c=>c.id===chatId)){chatId=null;renderMessages([]);renderHandoff(null);}
   renderState();if(settings)fillSettings();
 }
 async function refresh(settings=false){
@@ -38,7 +39,7 @@ async function fetchChat(id, {preserveScroll=false, allowBusy=false}={}){
   const version=++chatReadVersion;
   const result=await api('messages?chat_id='+encodeURIComponent(id));
   if(chatId!==id||version!==chatReadVersion||(busy&&!allowBusy))return null;
-  renderMessages(result.messages,{preserveScroll});return result.messages;
+  renderMessages(result.messages,{preserveScroll});renderHandoff(result.summary);return result.messages;
 }
 async function selectChat(id){if(busy||loadingChat)return;loadingChat=true;chatId=id;renderState();try{await fetchChat(id);}finally{loadingChat=false;renderState();}}
 function renderMessages(messages, {preserveScroll=false}={}){
@@ -61,6 +62,7 @@ function renderMessages(messages, {preserveScroll=false}={}){
       used.onclick=()=>tab('memory',{ids:message.used_memory});meta.append(used);
     }
     if(message.role==='user'){
+      if(message.project_context){const context=message.project_context;meta.append(node('div',context.name?'Проект: '+context.name:context.reason,'project-context'));}
       const job=message.memory_job;
       if(job){
         const progress=node('div','Память: '+statuses[job.status]+(job.status==='done'?' · новых записей: '+job.added:''),'memory-progress');
@@ -94,19 +96,20 @@ function renderMessages(messages, {preserveScroll=false}={}){
 async function loadMemories(){
   const version=++memoryReadVersion;
   const params=new URLSearchParams({q:$('memory-search').value});
+  if(memoryScope?.project_id)params.set('project_id',memoryScope.project_id);
   if(memoryScope?.message_id)params.set('message_id',memoryScope.message_id);
   if(memoryScope?.ids)params.set('ids',memoryScope.ids.join(','));
   const result=await api('memories?'+params);
   if(version!==memoryReadVersion)return;
   memoryRows=result.memories;renderMemories();
 }
-function editMemory(row=null){$('memory-editor').hidden=false;$('memory-id').value=row?.id||'';$('memory-content').value=row?.content||'';$('memory-kind').value=row?.kind||'fact';$('memory-tier').value=row?.tier||'long';$('memory-content').focus();$('memory-editor').scrollIntoView({behavior:'smooth',block:'nearest'});}
-function renderMemories(){const container=$('memories');container.replaceChildren();const rows=memoryRows.filter(r=>!$('memory-filter').value||r.tier===$('memory-filter').value);for(const row of rows){const card=node('article',undefined,'memory-card panel');const tags=node('div',undefined,'tags');for(const text of [kinds[row.kind],tiers[row.tier],row.confirmed?'Подтверждено':'Из ваших слов',row.status==='conflict'?'Возможное противоречие':row.status==='superseded'?'Заменено':null].filter(Boolean))tags.append(node('span',text,'tag'));card.append(tags,node('p',row.content));if(row.note)card.append(node('p','Автоматическое толкование: '+row.note,'muted fine'));card.append(node('small',new Date(row.created).toLocaleString('ru-RU')));if(row.sources.length){const details=node('details');details.append(node('summary','Источники · '+row.sources.length));for(const source of row.sources){const item=node('div',source.content,'source');const button=node('button','Открыть разговор','quiet');button.onclick=()=>action(async()=>{tab('chat');await selectChat(source.chat_id);});item.append(button);details.append(item);}card.append(details);}const actions=node('div',undefined,'actions');const edit=node('button','Исправить / подтвердить');edit.onclick=()=>editMemory(row);const remove=node('button','Забыть','quiet danger');remove.onclick=()=>action(async()=>{await api('memory-delete',{id:row.id});await loadMemories();await refresh();});actions.append(edit,remove);card.append(actions);container.append(card);}if(!rows.length)container.append(node('div',memoryScope?'Связанных записей нет: устойчивые сведения не найдены, записи удалены или не подходят фильтру.':($('memory-search').value||$('memory-filter').value?'По этим условиям ничего не найдено.':'Здесь появятся важные сведения из ваших разговоров.'),'empty panel'));}
+function editMemory(row=null){$('memory-editor').hidden=false;$('memory-id').value=row?.id||'';$('memory-content').value=row?.content||'';$('memory-kind').value=row?.kind||'fact';$('memory-tier').value=row?.tier||'long';fillProjectSelect($('memory-project'),row?.projects?.[0]?.id||'');$('memory-content').focus();$('memory-editor').scrollIntoView({behavior:'smooth',block:'nearest'});}
+function renderMemories(){const container=$('memories');container.replaceChildren();const rows=memoryRows.filter(r=>!$('memory-filter').value||r.tier===$('memory-filter').value);for(const row of rows){const card=node('article',undefined,'memory-card panel');const tags=node('div',undefined,'tags');for(const text of [kinds[row.kind],tiers[row.tier],...(row.projects||[]).map(project=>project.name),row.confirmed?'Подтверждено':'Из ваших слов',row.status==='conflict'?'Возможное противоречие':row.status==='superseded'?'Заменено':null].filter(Boolean))tags.append(node('span',text,'tag'));card.append(tags,node('p',row.content));if(row.note)card.append(node('p','Автоматическое толкование: '+row.note,'muted fine'));card.append(node('small',new Date(row.created).toLocaleString('ru-RU')));if(row.sources.length){const details=node('details');details.append(node('summary','Источники · '+row.sources.length));for(const source of row.sources){const item=node('div',source.content,'source');const button=node('button','Открыть разговор','quiet');button.onclick=()=>action(async()=>{tab('chat');await selectChat(source.chat_id);});item.append(button);details.append(item);}card.append(details);}const actions=node('div',undefined,'actions');const edit=node('button','Исправить / подтвердить');edit.onclick=()=>editMemory(row);const remove=node('button','Забыть','quiet danger');remove.onclick=()=>action(async()=>{await api('memory-delete',{id:row.id});await loadMemories();await refresh();});const history=node('button','История','quiet');history.onclick=()=>action(()=>openVersions(row.id));actions.append(edit,history,remove);card.append(actions);container.append(card);}if(!rows.length)container.append(node('div',memoryScope?'Связанных записей нет: устойчивые сведения не найдены, записи удалены или не подходят фильтру.':($('memory-search').value||$('memory-filter').value?'По этим условиям ничего не найдено.':'Здесь появятся важные сведения из ваших разговоров.'),'empty panel'));}
 function settingsPayload(){return{endpoint:$('endpoint').value,model:$('model').value,memory_model:$('memory-model').value,auto_memory:$('auto-memory').checked,...($('api-key').value?{api_key:$('api-key').value}:{})};}
 async function saveSettings(){const next=await api('settings',settingsPayload());++refreshVersion;applyState(next,true);$('api-key').value='';}
 for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>tab(button.dataset.tab);
 $('new-chat').onclick=()=>action(async()=>{if(busy||loadingChat)return;loadingChat=true;renderState();try{const chat=await api('chats',{});chatId=chat.id;await refresh();await fetchChat(chatId);}finally{loadingChat=false;renderState();}});
-$('delete-chat').onclick=()=>action(async()=>{if(!chatId)return;if(!confirm('Удалить разговор и его неподтверждённые воспоминания без других источников?'))return;await api('chat-delete',{id:chatId});chatId=null;await refresh();renderMessages([]);});
+$('delete-chat').onclick=()=>action(async()=>{if(!chatId)return;if(!confirm('Удалить разговор и его неподтверждённые воспоминания без других источников?'))return;await api('chat-delete',{id:chatId});chatId=null;renderHandoff(null);await refresh();renderMessages([]);});
 $('chat-form').onsubmit=event=>{
   event.preventDefault();if(busy||loadingChat||!state)return;
   action(async()=>{
@@ -151,7 +154,7 @@ $('model-list').onchange=()=>{if($('model-list').value)$('model').value=$('model
 $('test-model').onclick=()=>action(async()=>{await saveSettings();$('test-model').disabled=true;try{const result=await api('test',{});notice('Ответ модели: '+result.answer);}finally{$('test-model').disabled=false;}});
 $('delete-key').onclick=()=>action(async()=>{const next=await api('settings',{delete_key:true});++refreshVersion;applyState(next,true);$('api-key').value='';notice('Ключ удалён.');});
 $('new-memory').onclick=()=>editMemory();$('cancel-memory').onclick=()=>{$('memory-editor').hidden=true;};
-$('memory-editor').onsubmit=event=>{event.preventDefault();action(async()=>{await api('memory',{id:$('memory-id').value||undefined,content:$('memory-content').value,kind:$('memory-kind').value,tier:$('memory-tier').value});$('memory-editor').hidden=true;await loadMemories();await refresh();});};
+$('memory-editor').onsubmit=event=>{event.preventDefault();action(async()=>{await api('memory',{id:$('memory-id').value||undefined,content:$('memory-content').value,kind:$('memory-kind').value,tier:$('memory-tier').value,project_id:$('memory-project').value||null});$('memory-editor').hidden=true;await loadMemories();await refresh();});};
 $('clear-memory-scope').onclick=()=>tab('memory');
 let searchTimer;$('memory-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>action(loadMemories),250);};$('memory-filter').onchange=renderMemories;
 action(async()=>{await refresh(true);if(state.chats.length)await selectChat(state.chats[0].id);if(!state.has_key||!state.settings.model)tab('settings');});
@@ -166,3 +169,67 @@ setInterval(()=>{
     if(activeTab==='memory'&&beforeProcessed!==state.growth.processed)await loadMemories();
   });
 },5000);
+
+function fillProjectSelect(select,selected){
+  if(document.activeElement===select)return;
+  select.replaceChildren(node('option',select.id==='memory-project'?'Общее / личное':'Не определён'));
+  select.firstChild.value='';
+  for(const project of state?.projects||[]){const option=node('option',project.name);option.value=project.id;select.append(option);}
+  select.value=selected||'';
+}
+async function openMessage(chat,message){
+  if(busy||loadingChat)return;
+  tab('chat');await selectChat(chat);
+  const target=[...document.querySelectorAll('[data-message-id]')].find(el=>el.dataset.messageId===message);
+  if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('source-highlight');setTimeout(()=>target.classList.remove('source-highlight'),2000);}
+}
+function entryList(container,entries,limit=3){
+  for(const [kind,label] of Object.entries(progressLabels)){
+    const selected=entries.filter(entry=>entry.kind===kind).slice(0,limit);
+    if(!selected.length)continue;
+    container.append(node('h4',label));
+    for(const entry of selected){const item=node('div',undefined,'project-entry');item.append(node('p',entry.content));const source=node('button','Источник','quiet');source.onclick=()=>action(()=>openMessage(entry.chat_id,entry.message_id));item.append(source);container.append(item);}
+  }
+}
+function renderHandoff(summary){
+  currentProject=summary?.project?.id||null;
+  fillProjectSelect($('chat-project'),currentProject);
+  $('handoff').hidden=!summary;
+  const container=$('handoff-content');container.replaceChildren();
+  if(!summary)return;
+  container.append(node('p','Сохранено сообщений: '+summary.message_count+(summary.project?' · Проект '+summary.project.name:''),'muted fine'));
+  if(summary.last_user)container.append(node('p','Последнее сообщение пользователя: '+summary.last_user.content,'handoff-excerpt'));
+  if(summary.project)entryList(container,summary.project.entries,2);
+  if(summary.memories.length){const button=node('button','Важные записи из разговора','quiet');button.onclick=()=>tab('memory',{ids:summary.memories.map(row=>row.id)});container.append(button);}
+}
+function renderLearning(){
+  fillProjectSelect($('chat-project'),currentProject);
+  $('chat-project').disabled=busy||loadingChat||!chatId;
+  fillProjectSelect($('memory-project'),$('memory-project').value);
+  const projects=$('projects');projects.replaceChildren();
+  for(const project of state.projects||[]){const card=node('article',undefined,'panel project-card');card.dataset.projectId=project.id;card.append(node('h3',project.name));entryList(card,project.entries);if(!project.entries.length)card.append(node('p','Прогресс появится из следующих сообщений.','muted'));const memory=node('button','Память проекта');memory.onclick=()=>tab('memory',{project_id:project.id,project_name:project.name});card.append(memory);projects.append(card);}
+  if(!state.projects?.length)projects.append(node('div','Назовите проект в чате и расскажите его цель. После анализа здесь появится карточка.','empty panel'));
+  const profile=$('profile');profile.replaceChildren();
+  for(const preference of state.profile||[]){const card=node('article',undefined,'panel memory-card');card.append(node('span',preference.confirmed?'Подтверждено вами':preference.mentions>1?'Повторялось: '+preference.mentions:'Из ваших слов','tag'),node('p',preference.content));const edit=node('button','Открыть запись памяти');edit.onclick=()=>tab('memory',{ids:[preference.id]});card.append(edit);profile.append(card);}
+  if(!state.profile?.length)profile.append(node('div','Здесь появятся общие предпочтения из ваших сообщений.','empty panel'));
+  renderChecks(state.exams);
+}
+function renderChecks(result){
+  const box=$('checks-result'),list=$('checks-list');box.replaceChildren();list.replaceChildren();
+  if(!result?.total){box.append(node('p','Пока недостаточно активных записей для проверки.'));}
+  else{box.append(node('strong','Пройдено '+result.passed+' из '+result.total));box.append(node('p','Последняя проверка: '+new Date(result.created).toLocaleString('ru-RU'),'muted fine'));}
+  if(result?.error)box.append(node('p',result.error,'error'));
+  for(const check of result?.details||[]){const row=node('article',undefined,'panel check-case');row.append(node('strong',check.passed?'Пройдено':'Нужна проверка',check.passed?'check-ok':'error'),node('p',check.question),node('small',(check.retrieved?'Запись найдена':'Запись не попала в контекст')+' · '+(check.grounded?'Источник или ручное подтверждение есть':'Не найдено подтверждение источником')));list.append(row);}
+}
+async function openVersions(identity){
+  historyMemoryId=identity;
+  const result=await api('versions?id='+encodeURIComponent(identity));
+  if(historyMemoryId!==identity)return;
+  $('memory-history').hidden=false;const list=$('versions');list.replaceChildren();
+  for(const version of result.versions){const row=node('article',undefined,'version-row');row.append(node('strong',version.reason),node('small',new Date(version.created).toLocaleString('ru-RU')),node('p',version.snapshot.content));const restore=node('button','Восстановить эту версию');restore.onclick=()=>action(async()=>{restore.disabled=true;try{const result=await api('restore-version',{id:version.id});await refresh();await loadMemories();await openVersions(result.id);notice('Версия памяти восстановлена.');}finally{if(restore.isConnected)restore.disabled=false;}});row.append(restore);list.append(row);}
+  if(!result.versions.length)list.append(node('p','Сохранённых версий нет.'));
+  $('memory-history').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+$('close-versions').onclick=()=>{historyMemoryId=null;$('memory-history').hidden=true;};
+$('run-checks').onclick=()=>action(async()=>{$('run-checks').disabled=true;try{const result=await api('checks',{});renderChecks(result);await refresh();}finally{$('run-checks').disabled=false;}});
+$('chat-project').onchange=()=>action(async()=>{if(busy||loadingChat||!chatId)return;const identity=chatId,project=$('chat-project').value||null;loadingChat=true;renderState();try{await api('set-project',{chat_id:identity,project_id:project});await refresh();await fetchChat(identity);}finally{loadingChat=false;renderState();}});
