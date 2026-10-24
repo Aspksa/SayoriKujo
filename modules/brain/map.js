@@ -129,8 +129,9 @@
   }
   function reveal(id){const queue=[id],seen=new Set();while(queue.length){const current=queue.pop();if(seen.has(current))continue;seen.add(current);
     for(const parent of graph.nodes.find(node=>node.id===current)?.parent_ids||[]){collapsed.delete(parent);queue.push(parent);}}}
+  function canLoad(id){return !graph.goal_path||graph.goal_path.windows.some(window=>window.parent===id);}
   async function toggleBranch(id){
-    if(collapsed.has(id)){collapsed.delete(id);if(!pages.has(id))await loadChildren(id);else renderGraph();}
+    if(collapsed.has(id)){collapsed.delete(id);if(!pages.has(id)&&canLoad(id))await loadChildren(id);else renderGraph();}
     else{collapsed.add(id);const shown=hierarchy();if(!shown.has(selected)){selected=id;await loadPassport(id);}renderGraph();}
   }
   function renderNode(data){
@@ -147,7 +148,7 @@
     if(data.can_expand){const tools=element('div',undefined,'map-node-tools'),page=pages.get(data.id),folded=collapsed.has(data.id);
       const fold=button(folded?'Развернуть':'Свернуть',()=>toggleBranch(data.id),'quiet map-fold');fold.setAttribute('aria-label',(folded?'Развернуть':'Свернуть')+' ветку «'+data.title+'»');fold.setAttribute('aria-expanded',String(!folded));tools.append(fold);
       if(page)tools.append(element('small',page.ids.size+' / '+page.total,'map-page-count'));
-      if(!folded&&(!page||page.has_more)){const more=button(page?'Загрузить ещё':'Загрузить записи',()=>loadChildren(data.id),'quiet map-load-children');more.dataset.parentId=data.id;tools.append(more);}
+      if(!folded&&canLoad(data.id)&&(!page||page.has_more)){const more=button(page?'Загрузить ещё':'Загрузить записи',()=>loadChildren(data.id),'quiet map-load-children');more.dataset.parentId=data.id;tools.append(more);}
       wrapper.append(tools);
     }
     return wrapper;
@@ -210,9 +211,14 @@
     if(!mobile.matches){el('map-passport').scrollIntoView({behavior:'smooth',block:'nearest'});return;}
     if(dialog.open)return;returnFocus=document.activeElement;el('map-mobile-content').append(el('map-passport'));dialog.showModal();el('map-close-card').focus();
   }
-  function closeCard(){if(dialog.open)dialog.close();}
-  dialog.addEventListener('close',()=>{el('map-passport-home').append(el('map-passport'));
-    const target=returnFocus?.isConnected?returnFocus:[...el('map-nodes').querySelectorAll('.map-node')].find(card=>card.dataset.nodeId===selected);target?.focus({preventScroll:true});});
+  function restoreCard(){
+    if(el('map-passport').parentElement===el('map-passport-home'))return;
+    el('map-passport-home').append(el('map-passport'));
+    const target=returnFocus?.isConnected?returnFocus:[...el('map-nodes').querySelectorAll('.map-node')].find(card=>card.dataset.nodeId===selected);target?.focus({preventScroll:true});
+  }
+  function closeCard(){if(dialog.open)dialog.close();restoreCard();}
+  dialog.addEventListener('close',restoreCard);
+  dialog.addEventListener('cancel',event=>{event.preventDefault();closeCard();});
   mobile.addEventListener('change',()=>{if(!mobile.matches)closeCard();canvas.sync();});
   el('map-close-card').onclick=closeCard;el('map-open-card').onclick=openCard;
   async function loadPassport(id){
