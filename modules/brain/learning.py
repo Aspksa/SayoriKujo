@@ -1,5 +1,6 @@
 """Project-aware memory, version history, profiles, handoffs and local retrieval checks."""
 
+from contextlib import closing
 import json
 import hashlib
 import re
@@ -33,7 +34,7 @@ class Learning:
             folder = self.store.root / "backups"
             folder.mkdir(exist_ok=True)
             destination = folder / ("before-v2-" + uuid.uuid4().hex + ".sqlite3")
-            with sqlite3.connect(self.store.path) as source, sqlite3.connect(destination) as target:
+            with closing(sqlite3.connect(self.store.path)) as source, closing(sqlite3.connect(destination)) as target:
                 source.backup(target)
         schema = [
             """CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,

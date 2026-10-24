@@ -1,5 +1,6 @@
 """Automatic project memory; deterministic provider, no external API calls."""
 import json
+from contextlib import closing
 import sqlite3
 import unittest
 from unittest.mock import patch
@@ -277,7 +278,7 @@ class LearningTests(unittest.TestCase):
         memory_id = self.service.store.memories()[0]["id"]
         key_before = (self.root / "secret.json").read_bytes()
         self.service.close()
-        with sqlite3.connect(self.service.store.path) as db:
+        with closing(sqlite3.connect(self.service.store.path)) as db:
             new_tables = ("projects", "project_sources", "chat_projects", "analysis_contexts", "memory_scopes", "memory_projects",
                           "project_entries", "memory_series", "memory_versions", "chat_summaries", "memory_checks", "memory_check_runs")
             for table in new_tables:
@@ -290,7 +291,7 @@ class LearningTests(unittest.TestCase):
         self.assertTrue(reopened.store.learning.versions(memory_id))
         backups = list((self.root / "backups").glob("*.sqlite3"))
         self.assertEqual(len(backups), 1)
-        with sqlite3.connect(backups[0]) as db:
+        with closing(sqlite3.connect(backups[0])) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM memories").fetchone()[0], 1)
             self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 0)
         another = brain.BrainService(self.root, self.cloud.factory, start_worker=False)
