@@ -25,3 +25,6 @@
 @media(max-width:720px){input,textarea,select,.settings-section input,.settings-section select,.module-search input,.memory-toolbar input,.memory-toolbar select,.chat-search input,#message{font-size:16px}.project-focus select{font-size:13px}.map-toolbar select,.map-controls select,.map-navigation select{font-size:13px}}
 
 @media(max-width:720px){.portal .app-header{flex-wrap:wrap}.portal .app-header .header-actions{margin-left:45px;padding-top:0}}
+
+.brain-app[data-view=map]>.app-main>.metrics,.brain-app[data-view=map] #tab-map>.memory-head{display:none}
+#projects:has(>.project-card:only-child){grid-template-columns:minmax(0,1fr);max-width:900px}

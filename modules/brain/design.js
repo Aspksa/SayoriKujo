@@ -5,6 +5,7 @@
   let menuReturn=null,dialogReturn=null;
   const preference=(key,fallback)=>{try{return localStorage.getItem('sayori.ui.'+key)||fallback;}catch{return fallback;}};
   const save=(key,value)=>{try{localStorage.setItem('sayori.ui.'+key,value);}catch{}};
+  let lastMobile=null;
   let compact=preference('sidebar','full')==='compact';
   function setMenu(open,restore=true){
     if(!mobile.matches)return;
@@ -15,7 +16,7 @@
     body.classList.toggle('sidebar-compact',compact&&!mobile.matches);
     body.classList.remove('menu-open');backdrop.hidden=true;el('main-content').inert=false;
     sidebar.inert=mobile.matches;toggle.setAttribute('aria-label',mobile.matches?'Открыть меню':compact?'Развернуть меню':'Свернуть меню');toggle.setAttribute('aria-expanded',String(!mobile.matches&&!compact));
-    const browser=el('chat-browser');if(browser)browser.open=!mobile.matches;
+    if(lastMobile!==mobile.matches){const browser=el('chat-browser');if(browser)browser.open=!mobile.matches;const mapOptions=document.querySelector('.map-options');if(mapOptions)mapOptions.open=!mobile.matches;lastMobile=mobile.matches;}
   }
   if(sidebar&&toggle){
     toggle.onclick=()=>{if(mobile.matches){sidebar.inert=false;setMenu(true);}else{compact=!compact;save('sidebar',compact?'compact':'full');layout();}};

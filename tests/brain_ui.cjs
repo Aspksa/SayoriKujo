@@ -122,7 +122,7 @@ const fs=require('node:fs/promises');
     if(screenshots)await page.screenshot({path:path.join(screenshots,'checks.png'),fullPage:true});
     await page.reload();
     await page.waitForFunction(()=>document.querySelector('#chat-project option:checked')?.textContent==='Sakura');
-    await page.locator('#handoff > summary').click();
+    await navigate('chat');await page.locator('#handoff > summary').click();
     if(!(await page.locator('#handoff-content').textContent()).includes('Остановились: на проверках.'))throw Error('Handoff was lost after reload');
     if(screenshots)await page.screenshot({path:path.join(screenshots,'handoff.png'),fullPage:true});
     await page.locator('#message').fill('Ветка Голос. Хочу русскую озвучку. Какой тембр выбрать? Вариант: низкий голос. Вариант: мягкий голос.');
