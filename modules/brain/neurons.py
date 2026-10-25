@@ -139,10 +139,11 @@ class Neurons:
 
     def activate(self, db, ids):
         ids=sorted(set(ids))
-        # At most 20 saved context records are counted, no propagation loops.
-        for index,a in enumerate(ids[:20]):
-            for b in ids[index+1:20]:
-                db.execute('UPDATE synapses SET coactivations=coactivations+1 WHERE first_id=? AND second_id=?',(a,b))
+        if len(ids) >= 2:
+            # The trace is already bounded by the chat context budget. Include summary
+            # memories too: a reply may contain more than twenty distinct records.
+            placeholders=','.join('?' for _ in ids)
+            db.execute('UPDATE synapses SET coactivations=coactivations+1 WHERE first_id IN ('+placeholders+') AND second_id IN ('+placeholders+')',ids+ids)
 
     def state(self):
         with self.store.connection() as db:

@@ -112,6 +112,12 @@ class NeuronTests(unittest.TestCase):
         self.service.get('graph',{'lazy':['1']})
         with self.service.store.connection() as db:self.assertEqual(self.service.store.neurons.links(db,a)[0]['coactivations'],1)
 
+    def test_joint_use_includes_memories_beyond_first_twenty_in_trace(self):
+        a,b=self.pair()
+        with self.service.store.connection(write=True) as db:
+            self.service.store.neurons.activate(db,[a,b]+['0'+f'{i:031x}' for i in range(21)])
+        with self.service.store.connection() as db:self.assertEqual(self.service.store.neurons.links(db,a)[0]['coactivations'],1)
+
     def test_reanalysis_preserves_joint_use_strength(self):
         a,b=self.pair()
         with self.service.store.connection(write=True) as db:
