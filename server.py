@@ -33,18 +33,9 @@ sys.modules[_brain_spec.name] = brain_module
 _brain_spec.loader.exec_module(brain_module)
 
 
-PAGE = """<!doctype html>
-<html lang="ru"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SayoriKujo</title>
-<style>
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#faf7f3;
-color:#382b2e;font:18px system-ui,sans-serif;text-align:center}
-main{padding:32px}h1{font-weight:500;font-size:clamp(32px,7vw,56px);margin:0 0 12px}
-p{color:#796b70;line-height:1.6}small{font-size:14px;color:#907f84}
-</style><main><h1>Саёри Кудзё</h1><p>SayoriKujo запущена.</p>
-<small>Локальный сервер работает.</small><p><a href="/brain">Мозги · чат и память</a></p><p><a href="/history">История сеансов</a></p></main></html>""".encode("utf-8")
-
+UI_ROOT = Path(__file__).resolve().parent / "modules" / "brain"
+PAGE = (UI_ROOT / "home.html").read_bytes()
+HISTORY_TEMPLATE = (UI_ROOT / "history.html").read_text(encoding="utf-8")
 
 def history_page(store):
     def escape(value):
@@ -68,11 +59,12 @@ def history_page(store):
         return result
 
     rows = []
-    for record in store.records():
+    records = store.records()
+    for record in records:
         stats = record.get("traffic")
         stats = stats if isinstance(stats, dict) else {}
         try:
-            started = diagnostics.datetime.fromisoformat(record["started_at"]).astimezone().strftime("%d.%m.%Y %H:%M:%S")
+            started = diagnostics.datetime.fromisoformat(record["started_at"]).astimezone().strftime("%d.%m.%Y · %H:%M:%S")
         except ValueError:
             started = record["started_at"]
         duration = seconds(record.get("duration_seconds"))
@@ -85,26 +77,18 @@ def history_page(store):
                                    + escape(seconds(stage.get("seconds"))) + "; "
                                    + escape({"ok": "готово", "error": "ошибка", "skipped": "пропущено",
                                              "manual": "открыть вручную"}.get(stage.get("status"), "завершён")) + "</li>")
-        cells = [started, diagnostics.STATUSES.get(record.get("status"), "Неизвестно"), duration,
-                 seconds(record.get("startup_seconds")), byte_pair(stats.get("network_pc")),
-                 byte_pair(stats.get("local_http"))]
-        rows.append("<tr>" + "".join("<td>" + escape(cell) + "</td>" for cell in cells) + "</tr>"
-                    + '<tr><td colspan="6"><details><summary>Этапы запуска · ' + escape(record["id"][:8])
-                    + "</summary><ul>" + "".join(stage_items) + "</ul></details></td></tr>")
-    body = """<!doctype html><html lang="ru"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>История сеансов · SayoriKujo</title>
-<style>body{background:#faf7f3;color:#382b2e;font:16px system-ui,sans-serif;margin:0}
-main{max-width:1400px;margin:auto;padding:28px}a{color:#8b3847}nav{display:flex;gap:24px}
-.table{overflow:auto}table{border-collapse:collapse;width:100%;background:#fff}
-td,th{text-align:left;padding:14px;border-bottom:1px solid #e5dade;vertical-align:top;min-width:120px}
-th{background:#eee4e7}details{font-size:14px;color:#796b70}p{line-height:1.6;color:#796b70}</style>
-<main><nav><a href="/">Главная</a><a href="/history">Обновить</a></nav><h1>История сеансов</h1>
-<p>Сеть ПК — все программы на физических адаптерах. HTTP — локальный обмен SayoriKujo.
-Данные сохраняются каждые 10 секунд. Для прерванного сеанса показана последняя сохранённая длительность.</p>
-<div class="table"><table><thead><tr><th>Начало</th><th>Состояние</th><th>Работа</th>
-<th>Полный запуск</th><th>Сеть ПК</th><th>HTTP локально</th></tr></thead><tbody>"""
-    body += "".join(rows) if rows else '<tr><td colspan="6">Сеансов пока нет или запись недоступна.</td></tr>'
-    return (body + "</tbody></table></div></main></html>").encode("utf-8")
+        status = record.get('status','unknown')
+        heading = '<div class="session-heading"><div><h2>' + escape(started) + '</h2><small>Сеанс ' + escape(record['id'][:8]) + '</small></div><span class="session-status">' + escape(diagnostics.STATUSES.get(status,'Неизвестно')) + '</span></div>'
+        metrics = '<div class="session-metrics">' + ''.join('<div><span>' + label + '</span><strong>' + escape(value) + '</strong></div>' for label,value in (
+            ('Время работы',duration),('Полный запуск',seconds(record.get('startup_seconds'))),
+            ('Сеть ПК',byte_pair(stats.get('network_pc'))),('HTTP локально',byte_pair(stats.get('local_http'))))) + '</div>'
+        steps = '<details class="session-steps"><summary>Этапы запуска · ' + str(len(stage_items)) + '</summary><ol>' + ''.join(stage_items) + '</ol></details>'
+        rows.append('<article class="panel session-card" data-status="' + escape(status) + '">' + heading + metrics + steps + '</article>')
+    options = '<option value="">Все состояния</option>' + ''.join('<option value="' + escape(key) + '">' + escape(label) + '</option>' for key,label in diagnostics.STATUSES.items())
+    toolbar = '<div class="panel history-toolbar"><label>Состояние<select id="history-filter">' + options + '</select></label><span id="history-visible">Показано сеансов: ' + str(len(records)) + '</span></div>'
+    empty = '<div id="history-no-results" class="empty panel"' + (' hidden' if rows else '') + '>Сеансов по этим условиям пока нет.</div>'
+    content = toolbar + '<div class="session-list">' + ''.join(rows) + '</div>' + empty
+    return HISTORY_TEMPLATE.replace('<!--SESSION_CONTENT-->',content).encode('utf-8')
 
 
 class LocalServer(ThreadingHTTPServer):
@@ -228,12 +212,12 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/brain/"):
             self.brain_api(path, head_only=head_only)
             return
-        if path == "/brain" or path in ("/brain/ui.js", "/brain/ui.css", "/brain/map.js", "/brain/map.css", "/brain/map-canvas.js"):
+        if path == "/brain" or path in ("/brain/ui.js", "/brain/ui.css", "/brain/map.js", "/brain/map.css", "/brain/map-canvas.js", "/brain/design.js"):
             name = "ui.html" if path == "/brain" else path.rsplit("/", 1)[1]
             body = (Path(__file__).resolve().parent / "modules" / "brain" / name).read_bytes()
             content_type = {"ui.html": "text/html; charset=utf-8", "ui.js": "text/javascript; charset=utf-8",
                             "ui.css": "text/css; charset=utf-8", "map.js": "text/javascript; charset=utf-8",
-                            "map.css": "text/css; charset=utf-8", "map-canvas.js": "text/javascript; charset=utf-8"}[name]
+                            "map.css": "text/css; charset=utf-8", "map-canvas.js": "text/javascript; charset=utf-8", "design.js": "text/javascript; charset=utf-8"}[name]
         elif path == "/":
             body, content_type = PAGE, "text/html; charset=utf-8"
         elif path == "/health":

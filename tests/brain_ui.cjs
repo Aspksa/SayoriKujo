@@ -16,13 +16,18 @@ const fs=require('node:fs/promises');
     browser=await chromium.launch({channel:'chrome',headless:true,args:['--no-sandbox']});
     page=await browser.newPage({viewport:{width:1440,height:1000}});
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    const navigate=async name=>{
+      if(await page.evaluate(()=>matchMedia('(max-width:720px)').matches&&!document.body.classList.contains('menu-open')))await page.locator('#menu-toggle').click();
+      await page.locator('[data-tab='+name+']').click();
+      await page.waitForFunction(value=>document.body.dataset.view===value,name);
+    };
     await page.goto(url);
     await page.waitForFunction(()=>document.getElementById('key-status').textContent.includes('не сохранён'));
     await page.locator('#api-key').fill('test-private-key-1234567890');
     await page.locator('#model').fill('chat-model');
     await page.locator('#settings-form button[type=submit]').click();
     await page.waitForFunction(()=>document.getElementById('key-status').textContent.startsWith('Ключ сохранён.'));
-    await page.locator('[data-tab=chat]').click();
+    await navigate('chat');
     let responseLost=false;
     const lostResponse=async route=>{
       if(responseLost){await route.continue();return;}
@@ -53,7 +58,7 @@ const fs=require('node:fs/promises');
     await page.locator('#memory-editor button[type=submit]').click();
     await page.waitForFunction(()=>document.querySelector('#memories .memory-card')?.textContent.includes('Подтверждено'));
     if(screenshots)await page.screenshot({path:path.join(screenshots,'memory.png'),fullPage:true});
-    await page.locator('[data-tab=chat]').click();
+    await navigate('chat');
     // A state response captured before chat creation must not erase the new selection.
     const stale=await page.evaluate(()=>api('state'));
     let seenStale;
@@ -92,16 +97,16 @@ const fs=require('node:fs/promises');
     await page.locator('#versions button').first().click();
     await page.waitForFunction(()=>document.getElementById('notice').textContent==='Версия памяти восстановлена.');
     await page.locator('#close-versions').click();
-    await page.locator('[data-tab=profile]').click();
+    await navigate('profile');
     if(await page.locator('#profile .memory-card').count()!==1)throw Error('Global profile was not generated');
-    await page.locator('[data-tab=chat]').click();
+    await navigate('chat');
     await page.locator('#message').fill('Проект Sakura. Цель: сделать помощницу. Осталось: добавить поиск. Остановились: на памяти.');
     await page.locator('#send').click();
     await page.waitForFunction(()=>document.querySelector('#chat-project option:checked')?.textContent==='Sakura',null,{timeout:20000});
     await page.locator('#message').fill('Сделано: добавлен поиск. Остановились: на проверках.');
     await page.locator('#send').click();
     await page.waitForFunction(()=>document.querySelector('#projects')?.textContent.includes('Остановились: на проверках.'),null,{timeout:20000});
-    await page.locator('[data-tab=projects]').click();
+    await navigate('projects');
     if(await page.locator('#projects .project-card').count()!==1)throw Error('Project was duplicated');
     const board=await page.locator('#projects').textContent();
     if(!board.includes('Сделано: добавлен поиск.')||board.includes('Осталось: добавить поиск.')||board.includes('Остановились: на памяти.'))throw Error('Project progress was not updated');
@@ -110,7 +115,7 @@ const fs=require('node:fs/promises');
     await page.waitForFunction(()=>document.getElementById('memory-scope-label').textContent.includes('Sakura'));
     await page.waitForFunction(()=>document.querySelectorAll('#memories .memory-card').length===1&&document.getElementById('memories').textContent.includes('Осталось: добавить поиск.'));
     if(!(await page.locator('#memories').textContent()).includes('Осталось: добавить поиск.'))throw Error('Project memory filter failed');
-    await page.locator('[data-tab=checks]').click();
+    await navigate('checks');
     await page.locator('#run-checks').click();
     await page.waitForFunction(()=>!document.getElementById('run-checks').disabled&&document.getElementById('checks-result').textContent.includes('Пройдено'));
     if(await page.locator('#checks-list .check-case').count()!==1)throw Error('Automatic checks were not generated');
@@ -145,13 +150,13 @@ const fs=require('node:fs/promises');
     await page.locator('#map-history .map-event').first().waitFor();
     if(!(await page.locator('#map-history').textContent()).includes('Создана ветка развития'))throw Error('Growth history is missing');
     if(screenshots)await page.screenshot({path:path.join(screenshots,'growth-history.png'),fullPage:true});
-    await page.locator('[data-tab=chat]').click();
+    await navigate('chat');
     for(const text of ['Я предпочитаю короткие ответы без длинных вступлений.','Я предпочитаю короткие ответы без длинных вступлений и повторов.']){
       await page.locator('#message').fill(text);await page.locator('#send').click();
       await page.waitForFunction(async text=>{const result=await api('memories');return result.memories.some(row=>row.content===text);},text,{timeout:20000});
       await page.waitForFunction(()=>!document.getElementById('send').disabled);
     }
-    await page.locator('[data-tab=map]').click();
+    await navigate('map');
     await page.locator('[data-map-view=sleep]').click();
     await page.locator('#map-consolidate').click();
     await page.getByRole('button',{name:'Объединить в группу',exact:true}).waitFor();
@@ -257,11 +262,11 @@ const fs=require('node:fs/promises');
     await page.waitForFunction(()=>!document.getElementById('map-mobile-dialog').open&&document.getElementById('map-passport').parentElement.id==='map-passport-home');
     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Growth map overflow on mobile');
     if(screenshots)await page.screenshot({path:path.join(screenshots,'growth-mobile.png'),fullPage:true});
-    await page.locator('[data-tab=chat]').click();
+    await navigate('chat');
     await page.setViewportSize({width:390,height:844});
     if(screenshots)await page.screenshot({path:path.join(screenshots,'mobile.png'),fullPage:true});
     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Horizontal overflow on mobile');
-    await page.locator('[data-tab=projects]').click();
+    await navigate('projects');
     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Project layout overflow on mobile');
     if(screenshots)await page.screenshot({path:path.join(screenshots,'projects-mobile.png'),fullPage:true});
     // Durable memories, real lexical associations and paginated browsing.
@@ -275,7 +280,7 @@ const fs=require('node:fs/promises');
     await page.evaluate(async ids=>{await refresh();await window.BrainMap.open('memory:'+ids[0]);},neuralIds);
     await page.waitForFunction(()=>document.getElementById('map-passport').textContent.includes('Общие основы слов:'));
     if(screenshots)await page.screenshot({path:path.join(screenshots,'neural-map.png'),fullPage:true});
-    await page.locator('[data-tab=memory]').click();
+    await navigate('memory');
     await page.locator('#memory-search').fill('НЕЙРОКАРТА');
     await page.locator('#memory-filter').selectOption('vault');
     await page.waitForFunction(()=>document.querySelectorAll('#memories .memory-card').length===2);
@@ -289,8 +294,86 @@ const fs=require('node:fs/promises');
     await page.setViewportSize({width:390,height:844});
     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Neural memory mobile overflow');
     if(screenshots)await page.screenshot({path:path.join(screenshots,'neural-memory-mobile.png'),fullPage:true});
+    // Every module shares the new frame; navigation remains local and keyboard friendly.
+    await page.setViewportSize({width:1440,height:1000});
+    await navigate('chat');
+    const currentChat=await page.evaluate(()=>chatId);
+    await page.locator('#message').fill('Черновик остаётся при поиске и переходах');
+    await page.locator('#chat-search').fill('несуществующий разговор 92841');
+    if(await page.locator('#chats .chat-item').count())throw Error('Chat title filter did not filter');
+    if(await page.evaluate(()=>chatId)!==currentChat)throw Error('Chat search changed active conversation');
+    await page.locator('#chat-search').fill('');
+    await page.keyboard.press('Control+k');await page.locator('#navigation-dialog[open]').waitFor();
+    await page.locator('#navigation-search').fill('Профиль');await page.locator('#navigation-search').press('Enter');
+    await page.waitForFunction(()=>document.body.dataset.view==='profile'&&!document.getElementById('navigation-dialog').open);
+    if(!page.url().endsWith('#profile'))throw Error('Module URL did not reflect navigation');
+    await navigate('chat');
+    if(await page.locator('#message').inputValue()!=='Черновик остаётся при поиске и переходах')throw Error('Navigation lost message draft');
+    await page.locator('#menu-toggle').click();
+    if(!await page.evaluate(()=>document.body.classList.contains('sidebar-compact')))throw Error('Desktop sidebar did not fold');
+    await page.reload();await page.waitForFunction(()=>state?.has_key&&document.body.dataset.view==='chat');
+    if(!await page.evaluate(()=>document.body.classList.contains('sidebar-compact')))throw Error('Sidebar preference did not persist');
+    await page.locator('#menu-toggle').click();
+    await navigate('memory');await page.locator('#memory-search').fill('');await page.locator('#memory-filter').selectOption('');
+    await page.locator('#memory-compact').click();
+    if(await page.locator('#memories').getAttribute('data-density')!=='compact')throw Error('Compact memory layout missing');
+    await page.reload();await page.waitForFunction(()=>state?.has_key&&document.body.dataset.view==='memory');
+    if(await page.locator('#memories').getAttribute('data-density')!=='compact')throw Error('Memory view did not persist');
+    await page.locator('#memory-cards').click();
+    await navigate('settings');await page.locator('#api-key').fill('test-key-for-display-only');await page.locator('#reveal-key').click();
+    if(await page.locator('#api-key').getAttribute('type')!=='text')throw Error('API key reveal did not work');
+    await page.locator('#reveal-key').click();await page.locator('#api-key').fill('');
+    if(await page.locator('#settings-status').getAttribute('data-dirty')!=='true')throw Error('Unsaved settings indicator missing');
+    await page.locator('#settings-form button[type=submit]').click();
+    await page.waitForFunction(()=>document.getElementById('settings-status').dataset.dirty==='false');
+    if(await page.locator('#api-key').getAttribute('type')!=='password')throw Error('API key remained visible after save');
+    const modules=['chat','memory','map','projects','profile','checks','settings'];
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      for(const name of modules){
+        await navigate(name);
+        await page.evaluate(()=>scrollTo(0,0));
+        await page.waitForTimeout(150);
+        if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Redesign overflow '+name+' '+width);
+        const duplicates=await page.evaluate(()=>{const ids=[...document.querySelectorAll('[id]')].map(x=>x.id);return ids.filter((id,index)=>ids.indexOf(id)!==index);});
+        if(duplicates.length)throw Error('Duplicate IDs: '+duplicates.join(','));
+        if(!await page.locator('[data-tab='+name+']').getAttribute('aria-current'))throw Error('Current navigation state missing');
+        if(screenshots)await page.screenshot({path:path.join(screenshots,'design-'+name+'-'+width+'.png'),fullPage:name==='settings'});
+      }
+    }
+    for(const width of [320,768]){
+      await page.setViewportSize({width,height:900});
+      for(const name of modules){await navigate(name);if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Narrow/tablet overflow '+name+' '+width);}
+    }
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('#menu-toggle').click();
+    await page.locator('#app-sidebar .brand').focus();await page.keyboard.press('Shift+Tab');
+    if(!await page.evaluate(()=>document.getElementById('app-sidebar').contains(document.activeElement)))throw Error('Focus escaped mobile menu');
+    await page.keyboard.press('Escape');
+    if(await page.evaluate(()=>document.body.classList.contains('menu-open')||document.getElementById('main-content').inert))throw Error('Mobile menu did not close cleanly');
+    if(await page.evaluate(()=>document.activeElement.id)!=='menu-toggle')throw Error('Mobile menu focus was not restored');
+    const portal=await page.context().newPage();portal.on('pageerror',error=>errors.push(error.message));
+    for(const width of [1440,390,320]){
+      await portal.setViewportSize({width,height:1000});
+      await portal.goto(new URL('/',url).href);await portal.waitForFunction(()=>document.getElementById('home-memory').textContent!=='—');
+      if(await portal.locator('.module-card').count()!==8)throw Error('Home module shortcuts missing');
+      if(await portal.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Home overflow '+width);
+      if(screenshots&&width!==320)await portal.screenshot({path:path.join(screenshots,'design-home-'+width+'.png'),fullPage:true});
+      await portal.goto(new URL('/history',url).href);
+      if(await portal.locator('.session-card').count()!==3)throw Error('History fixture did not load');
+      await portal.locator('#history-filter').selectOption('failed');
+      if(await portal.locator('.session-card:visible').count()!==1)throw Error('History status filter failed');
+      await portal.locator('#history-filter').selectOption('running');
+      if(!await portal.locator('#history-no-results').isVisible())throw Error('History empty filter state missing');
+      await portal.locator('#history-filter').selectOption('');
+      if(await portal.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('History overflow '+width);
+      if(screenshots&&width!==320)await portal.screenshot({path:path.join(screenshots,'design-history-'+width+'.png'),fullPage:true});
+    }
+    await portal.goto(new URL('/brain#projects',url).href);
+    await portal.waitForFunction(()=>state?.has_key&&document.body.dataset.view==='projects');
+    await portal.close();
     if(errors.length)throw Error(errors.join('\n'));
-    console.log('Browser QA passed: settings, lost-response recovery, per-message extraction progress, source/reply memory filters, stale refresh protection, cross-chat retrieval, project recognition/progress, versions/restore, profile, local checks, persisted handoff, development graph, source passports, actual memory traces, question resolution, growth history, local consolidation/group/undo, zoom/buttons/wheel/pinch, folding, tree/network/sequence, goal path, saved-data flashes, cursor paging/anchor/cache, fullscreen mobile passport, durable memory, explainable associations, memory cursor pagination, mobile layout.');
+    console.log('Browser QA passed: settings, lost-response recovery, per-message extraction progress, source/reply memory filters, stale refresh protection, cross-chat retrieval, project recognition/progress, versions/restore, profile, local checks, persisted handoff, development graph, source passports, actual memory traces, question resolution, growth history, local consolidation/group/undo, zoom/buttons/wheel/pinch, folding, tree/network/sequence, goal path, saved-data flashes, cursor paging/anchor/cache, fullscreen mobile passport, durable memory, explainable associations, memory cursor pagination, redesigned modules at desktop/mobile/tablet widths, command navigation, menu focus/persistence, chat title search/draft preservation, memory density, settings feedback/key masking, home shortcuts/counters, history filters, deep links, mobile layout.');
   }catch(error){
     if(page)console.error('Page notice:',await page.locator('#notice').textContent().catch(()=>''));
     if(page&&process.env.UI_SCREENSHOT_DIR){await fs.mkdir(process.env.UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.UI_SCREENSHOT_DIR,'failure.png'),fullPage:true}).catch(()=>{});}

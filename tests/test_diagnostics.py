@@ -145,7 +145,7 @@ class DiagnosticsLaunchTests(launch.LaunchHarness):
         url = running.url()
         self.assert_healthy(url)
         with launch.HTTP.open(url + "history", timeout=5) as response:
-            self.assertIn("История сеансов", response.read().decode("utf-8"))
+            self.assertIn("История запусков", response.read().decode("utf-8"))
         self.assertEqual(running.interrupt(), 0)
         record = self.records()[0]
         self.assertEqual(record["status"], "stopped")

@@ -198,7 +198,7 @@
       const dx=bc.x-ac.x,dy=bc.y-ac.y,horizontal=Math.abs(dx)>Math.abs(dy)*1.2;
       const x1=ac.x+(horizontal?Math.sign(dx)*a.width/scale/2:0),y1=ac.y+(horizontal?0:Math.sign(dy)*a.height/scale/2);
       const x2=bc.x-(horizontal?Math.sign(dx)*b.width/scale/2:0),y2=bc.y-(horizontal?0:Math.sign(dy)*b.height/scale/2);
-      const line=document.createElementNS('http://www.w3.org/2000/svg','path');
+      const line=document.createElementNS('http://www.w3.org/2000/svg','path');line.dataset.kind=edge.kind;
       line.setAttribute('d',horizontal?`M${x1},${y1} C${(x1+x2)/2},${y1} ${(x1+x2)/2},${y2} ${x2},${y2}`:
         `M${x1},${y1} C${x1},${(y1+y2)/2} ${x2},${(y1+y2)/2} ${x2},${y2}`);
       if(trace.has(edge.source)&&trace.has(edge.target))line.classList.add('on-path');

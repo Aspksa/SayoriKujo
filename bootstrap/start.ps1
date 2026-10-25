@@ -128,7 +128,7 @@ try {
     Save-Boot
     Remove-OldDiagnostics
     $serverPath = Join-Path $projectRoot 'server.py'
-    foreach ($required in @('server.py', 'bootstrap\traffic.py', 'bootstrap\diagnostics.py', 'modules\brain\__init__.py', 'modules\brain\store.py', 'modules\brain\learning.py', 'modules\brain\growth.py', 'modules\brain\map_data.py', 'modules\brain\neurons.py', 'modules\brain\map-canvas.js', 'modules\brain\map.js', 'modules\brain\map.css', 'modules\brain\provider.py', 'modules\brain\ui.html', 'modules\brain\ui.js', 'modules\brain\ui.css')) {
+    foreach ($required in @('server.py', 'bootstrap\traffic.py', 'bootstrap\diagnostics.py', 'modules\brain\__init__.py', 'modules\brain\store.py', 'modules\brain\learning.py', 'modules\brain\growth.py', 'modules\brain\map_data.py', 'modules\brain\neurons.py', 'modules\brain\map-canvas.js', 'modules\brain\map.js', 'modules\brain\map.css', 'modules\brain\provider.py', 'modules\brain\ui.html', 'modules\brain\ui.js', 'modules\brain\design.js', 'modules\brain\home.html', 'modules\brain\history.html', 'modules\brain\ui.css')) {
         if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $required) -PathType Leaf)) {
             throw ('Не найден ' + $required + '. Сначала распакуйте весь архив проекта.')
         }

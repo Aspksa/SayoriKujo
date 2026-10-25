@@ -45,6 +45,13 @@ class ProjectCloud(tests.FakeCloud):
 with tempfile.TemporaryDirectory() as folder:
     cloud = ProjectCloud()
     with tests.launch.server_module.LocalServer(("127.0.0.1", 0), tests.launch.server_module.Handler) as server:
+        server.session_store=tests.launch.server_module.diagnostics.SessionStore(Path(folder)/'launch-fixture')
+        for status in ('stopped','failed','interrupted'):
+            journal=tests.launch.server_module.diagnostics.Session(server.session_store)
+            journal.stage('python','Проверка Python',.18)
+            journal.stage('server','Подготовка локального сервера',.24,'error' if status=='failed' else 'ok')
+            journal.startup_complete()
+            journal.finish(status=status,snapshot={'network_pc':{'received_bytes':2048000,'sent_bytes':512000,'complete':True},'local_http':{'received_bytes':20480,'sent_bytes':40960,'complete':True}})
         server.brain_service = tests.brain.BrainService(Path(folder), cloud.factory, start_worker=True)
         print(f"http://127.0.0.1:{server.server_port}/brain", flush=True)
         try:

@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Главная · SayoriKujo</title>
+<link rel="stylesheet" href="/brain/ui.css">
+<script src="/brain/design.js" defer>
+</script>
+</head>
+<body class="portal" data-page="home">
+<a class="skip-link" href="#main-content">К содержимому</a>
+<aside id="app-sidebar" class="app-sidebar" aria-label="Боковая панель">
+<div class="sidebar-brand">
+<a class="brand" href="/" aria-label="SayoriKujo · главная">
+<svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+<rect width="40" height="40" rx="13" fill="currentColor"/>
+<path d="M20 9c1 7 4 10 11 11-7 1-10 4-11 11-1-7-4-10-11-11 7-1 10-4 11-11z" fill="white"/>
+<circle cx="30" cy="10" r="2" fill="#edc887"/>
+</svg>
+<span class="brand-copy">SayoriKujo<small>Личное пространство</small>
+</span>
+</a>
+<button id="nav-close" class="icon-button mobile-only" aria-label="Закрыть меню">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M6 6l12 12 M18 6L6 18"/>
+</svg>
+</button>
+</div>
+<div class="sidebar-section-label">ПРОСТРАНСТВО</div>
+<nav aria-label="Основная навигация">
+<a class="portal-sidebar-link" href="/" title="Главная" aria-label="Главная" data-page-link="home" aria-current="page">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>
+</svg>
+<span class="nav-label">Главная</span>
+</a>
+<a class="portal-sidebar-link" href="/brain#chat" title="Разговоры" aria-label="Разговоры" data-page-link="chat">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2v-9.5A8.5 8.5 0 0 1 10.5 4h2A8.5 8.5 0 0 1 21 11.5z M7 10h9 M7 14h6"/>
+</svg>
+<span class="nav-label">Разговоры</span>
+</a>
+<a class="portal-sidebar-link" href="/brain#memory" title="Память" aria-label="Память" data-page-link="memory">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M6 4h12a2 2 0 0 1 2 2v14H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z M6 16h14 M8 8h8 M8 11h5"/>
+</svg>
+<span class="nav-label">Память</span>
+</a>
+<a class="portal-sidebar-link" href="/brain#map" title="Карта развития" aria-label="Карта развития" data-page-link="map">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M9 5h6 M5 9v6 M9 19h6 M19 9v6 M5 5h.01 M19 5h.01 M5 19h.01 M19 19h.01 M8 8l8 8 M16 8l-8 8"/>
+</svg>
+<span class="nav-label">Карта развития</span>
+</a>
+<a class="portal-sidebar-link" href="/brain#projects" title="Проекты" aria-label="Проекты" data-page-link="projects">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M3 7h7l2-3h9v16H3z M3 9h18"/>
+</svg>
+<span class="nav-label">Проекты</span>
+</a>
+<a class="portal-sidebar-link" href="/brain#profile" title="Профиль" aria-label="Профиль" data-page-link="profile">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8z M4 21v-2a8 8 0 0 1 16 0v2"/>
+</svg>
+<span class="nav-label">Профиль</span>
+</a>
+</nav>
+<div class="sidebar-section-label secondary-label">СИСТЕМА</div>
+<nav aria-label="Настройки и диагностика">
+<a class="portal-sidebar-link" href="/brain#checks" title="Проверки памяти" aria-label="Проверки памяти" data-page-link="checks">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6z M8 12l3 3 5-6"/>
+</svg>
+<span class="nav-label">Проверки памяти</span>
+</a>
+<a class="portal-sidebar-link" href="/brain#settings" title="Cloud.ru" aria-label="Cloud.ru" data-page-link="settings">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M4 7h16 M4 17h16 M8 4v6 M16 14v6"/>
+</svg>
+<span class="nav-label">Cloud.ru</span>
+</a>
+<a class="portal-sidebar-link" href="/history" title="История запусков" aria-label="История запусков" data-page-link="history">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M3 11a9 9 0 1 1 2.5 7 M3 4v7h7 M12 7v5l3 2"/>
+</svg>
+<span class="nav-label">История запусков</span>
+</a>
+</nav>
+<div class="aside-bottom">
+<div class="local-emblem">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M4 4h16v12H4z M8 21h8 M12 16v5"/>
+</svg>
+</div>
+<div class="aside-copy">
+<strong>
+<span class="dot">
+</span>На вашем устройстве</strong>
+<small>Память хранится локально</small>
+</div>
+</div>
+</aside>
+<button id="nav-backdrop" class="nav-backdrop" aria-label="Закрыть меню" hidden>
+</button>
+<main id="main-content" class="app-main">
+<header class="app-header">
+<div class="heading-group">
+<button id="menu-toggle" class="icon-button" aria-label="Свернуть меню" aria-controls="app-sidebar" aria-expanded="true">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M4 6h16 M4 12h16 M4 18h16"/>
+</svg>
+</button>
+<div>
+<div class="eyebrow">МОЁ ПРОСТРАНСТВО / ГЛАВНАЯ</div>
+<h1>Добро пожаловать</h1>
+<p>Ваши разговоры, знания и направления развития.</p>
+</div>
+</div>
+<div class="header-actions">
+<span class="badge connection-badge" id="home-state">Локальный сервер работает</span>
+</div>
+</header>
+<section class="portal-hero">
+<div>
+<div class="eyebrow">SAYORIKUJO · ЛИЧНОЕ ПРОСТРАНСТВО</div>
+<h2>Место для мыслей.<br>Память для важного.</h2>
+<p>Общайтесь с Саёри Кудзё, сохраняйте знания и возвращайтесь к своим проектам с того места, где остановились.</p>
+<a class="primary" href="/brain">Открыть пространство <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+</div>
+<div class="hero-memory">
+<div class="eyebrow">КАК ЭТО УСТРОЕНО</div>
+<h3>От разговора — к знаниям</h3>
+<div class="memory-flow">
+<div>
+<b>01</b> Общение с Саёри <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2v-9.5A8.5 8.5 0 0 1 10.5 4h2A8.5 8.5 0 0 1 21 11.5z M7 10h9 M7 14h6"/>
+</svg>
+</div>
+<div>
+<b>02</b> Сохранение важного <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M6 4h12a2 2 0 0 1 2 2v14H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z M6 16h14 M8 8h8 M8 11h5"/>
+</svg>
+</div>
+<div>
+<b>03</b> Связи и развитие <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M9 5h6 M5 9v6 M9 19h6 M19 9v6 M5 5h.01 M19 5h.01 M5 19h.01 M19 19h.01 M8 8l8 8 M16 8l-8 8"/>
+</svg>
+</div>
+</div>
+</div>
+</section>
+<section class="metrics" aria-label="Состояние пространства">
+<article>
+<strong id="home-memory">—</strong>
+<span>воспоминаний</span>
+</article>
+<article>
+<strong id="home-projects">—</strong>
+<span>проектов</span>
+</article>
+<article>
+<strong id="home-links">—</strong>
+<span>автоматических связей</span>
+</article>
+<article>
+<strong id="home-messages">—</strong>
+<span>сохранённых сообщений</span>
+</article>
+</section>
+<div class="portal-heading">
+<h2>Все разделы</h2>
+<span>Всё важное — рядом</span>
+</div>
+<div class="module-grid">
+<a class="module-card" href="/brain#chat">
+<span>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2v-9.5A8.5 8.5 0 0 1 10.5 4h2A8.5 8.5 0 0 1 21 11.5z M7 10h9 M7 14h6"/>
+</svg>
+</span>
+<h3>Разговоры</h3>
+<p>Общайтесь с Саёри и продолжайте сохранённые беседы.</p>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+<a class="module-card" href="/brain#memory">
+<span>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M6 4h12a2 2 0 0 1 2 2v14H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z M6 16h14 M8 8h8 M8 11h5"/>
+</svg>
+</span>
+<h3>Память</h3>
+<p>Найдите важное, уточните записи и проверьте их источники.</p>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+<a class="module-card" href="/brain#map">
+<span>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M9 5h6 M5 9v6 M9 19h6 M19 9v6 M5 5h.01 M19 5h.01 M5 19h.01 M19 19h.01 M8 8l8 8 M16 8l-8 8"/>
+</svg>
+</span>
+<h3>Карта развития</h3>
+<p>Посмотрите на связи между знаниями и направлениями.</p>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+<a class="module-card" href="/brain#projects">
+<span>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M3 7h7l2-3h9v16H3z M3 9h18"/>
+</svg>
+</span>
+<h3>Проекты</h3>
+<p>Цели, решения, задачи и место остановки.</p>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+<a class="module-card" href="/brain#profile">
+<span>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8z M4 21v-2a8 8 0 0 1 16 0v2"/>
+</svg>
+</span>
+<h3>Профиль</h3>
+<p>Предпочтения, которые делают общение вашим.</p>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+<a class="module-card" href="/brain#checks">
+<span>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6z M8 12l3 3 5-6"/>
+</svg>
+</span>
+<h3>Проверки памяти</h3>
+<p>Контролируйте поиск и происхождение записей.</p>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+<a class="module-card" href="/brain#settings">
+<span>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M4 7h16 M4 17h16 M8 4v6 M16 14v6"/>
+</svg>
+</span>
+<h3>Cloud.ru</h3>
+<p>Подключите модель и настройте автоматику.</p>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+<a class="module-card" href="/history">
+<span>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M3 11a9 9 0 1 1 2.5 7 M3 4v7h7 M12 7v5l3 2"/>
+</svg>
+</span>
+<h3>История запусков</h3>
+<p>Состояние сеансов, этапы запуска и учёт трафика.</p>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M5 12h14 M13 6l6 6-6 6"/>
+</svg>
+</a>
+</div>
+<footer class="portal-footer">
+<span>
+<span class="dot">
+</span>Локальное хранилище · без срока давности</span>
+<span>Cloud.ru используется для ответов и анализа</span>
+</footer>
+</main>
+</body>
+</html>
