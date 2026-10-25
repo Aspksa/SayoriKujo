@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import base64
 import hashlib
 import json
 import re
@@ -13,7 +14,7 @@ from .provider import BrainError, ENDPOINTS
 
 
 KINDS = {"fact", "preference", "project", "task"}
-TIERS = {"long", "core", "archive"}
+TIERS = {"long", "core", "vault", "archive"}
 
 
 def now():
@@ -34,7 +35,7 @@ def terms(text):
 
 
 DEFAULTS = {"endpoint": ENDPOINTS[0], "model": "", "memory_model": "", "auto_memory": True,
-            "revision": 0, "models": [], "auto_consolidation": True}
+            "revision": 0, "models": [], "auto_consolidation": True, "auto_neurons": True, "auto_vault": True}
 
 
 class BrainStore:
@@ -80,6 +81,8 @@ class BrainStore:
         self.learning.migrate(backup=had_database)
         from .growth import Growth
         self.growth = Growth(self, backup=had_database)
+        from .neurons import Neurons
+        self.neurons = Neurons(self, backup=had_database)
         with self.connection() as db:
             needs_checks = (db.execute("SELECT 1 FROM memory_checks LIMIT 1").fetchone()
                             and not db.execute("SELECT 1 FROM memory_check_runs LIMIT 1").fetchone())
@@ -114,7 +117,7 @@ class BrainStore:
     def configure(self, changes, secret_action=None):
         with self.connection(write=True) as db:
             config = self.config(db)
-            for name in ("endpoint", "model", "memory_model", "auto_memory", "auto_consolidation"):
+            for name in ("endpoint", "model", "memory_model", "auto_memory", "auto_consolidation", "auto_neurons", "auto_vault"):
                 if name in changes:
                     config[name] = changes[name]
             if config["endpoint"] not in ENDPOINTS:
@@ -123,6 +126,9 @@ class BrainStore:
                 raise BrainError("Некорректный режим автоматической памяти.")
             if not isinstance(config["auto_consolidation"], bool):
                 raise BrainError("Некорректный режим консолидации.")
+            for field in ('auto_neurons', 'auto_vault'):
+                if not isinstance(config[field], bool):
+                    raise BrainError('Некорректный режим автоматической памяти.')
             for field in ("model", "memory_model"):
                 if not isinstance(config[field], str) or len(config[field]) > 250:
                     raise BrainError("Некорректное название модели.")
@@ -130,6 +136,8 @@ class BrainStore:
             if changes.get("endpoint", config["endpoint"]) != self.config(db)["endpoint"] or secret_action is not None:
                 config["revision"] += 1
                 config["models"] = []
+            if any(config[k] and not self.config(db)[k] for k in ('auto_vault','auto_neurons')):
+                db.execute('INSERT OR IGNORE INTO neural_queue SELECT id,created FROM memories')
             if secret_action is not None:
                 secret_action()
             if not config["auto_memory"]:
@@ -273,7 +281,7 @@ class BrainStore:
             db.execute("UPDATE jobs SET status='done',added=?,error=NULL WHERE id=?", (added, job["id"]))
         return added
 
-    def memories(self, query="", message_id=None, identities=None, project_id=None):
+    def memories(self, query="", message_id=None, identities=None, project_id=None, source_limit=None):
         with self.connection() as db:
             clauses, parameters = [], []
             if message_id is not None:
@@ -298,11 +306,53 @@ class BrainStore:
                 record["scope"] = scope[0] if scope else "global"
                 record['completed_task'] = self.growth.task_completed(db, row['id'])
                 record["projects"] = [dict(project) for project in db.execute("SELECT p.id,p.name FROM memory_projects mp JOIN projects p ON p.id=mp.project_id WHERE mp.memory_id=?", (row["id"],))]
+                record["source_count"] = db.execute('SELECT COUNT(*) FROM sources WHERE memory_id=?',(row['id'],)).fetchone()[0]
                 record["sources"] = [dict(source) for source in db.execute(
-                    "SELECT m.id,m.chat_id,m.content,m.created FROM sources s JOIN messages m ON m.id=s.message_id WHERE s.memory_id=?",
-                    (row["id"],))]
+                    "SELECT m.id,m.chat_id,m.content,m.created FROM sources s JOIN messages m ON m.id=s.message_id WHERE s.memory_id=? ORDER BY m.created DESC,m.id DESC LIMIT ?",
+                    (row["id"],source_limit if source_limit is not None else -1))]
                 result.append(record)
             return result
+
+    def memory_page(self, query='', message_id=None, identities=None, project_id=None, tier='', cursor=None, limit=50):
+        if tier and tier not in TIERS or not 1 <= limit <= 50:
+            raise BrainError('Некорректный фильтр или размер страницы памяти.')
+        filters = [query,message_id,identities,project_id,tier]
+        signature = hashlib.sha256(json.dumps(filters,ensure_ascii=False).encode()).hexdigest()
+        clauses,args=[],[]
+        if query:
+            clauses.append("instr(normalize(m.content||' '||m.note),?)>0")
+            args.append(normalized(query))
+        if message_id:
+            clauses.append('EXISTS (SELECT 1 FROM sources s WHERE s.memory_id=m.id AND s.message_id=?)');args.append(message_id)
+        if project_id:
+            clauses.append('EXISTS (SELECT 1 FROM memory_projects p WHERE p.memory_id=m.id AND p.project_id=?)');args.append(project_id)
+        if identities is not None:
+            clauses.append('m.id IN ('+','.join('?' for _ in identities)+')' if identities else '0');args.extend(identities)
+        if tier:
+            clauses.append('m.tier=?');args.append(tier)
+        if cursor:
+            try:
+                if not isinstance(cursor,str) or len(cursor)>512:
+                    raise ValueError()
+                boundary=json.loads(base64.b64decode(cursor.encode('ascii'),altchars=b'-_',validate=True))
+                if not isinstance(boundary,list) or len(boundary)!=3 or boundary[2]!=signature:
+                    raise ValueError()
+                if not isinstance(boundary[0],str) or not isinstance(boundary[1],str) or not re.fullmatch('[a-f0-9]{32}',boundary[1]):
+                    raise ValueError()
+                if datetime.fromisoformat(boundary[0]).tzinfo is None:
+                    raise ValueError()
+            except (ValueError,TypeError,UnicodeError):
+                raise BrainError('Страница памяти устарела или повреждена. Обновите список.') from None
+            clauses.append('(m.updated,m.id)<(?,?)');args.extend(boundary[:2])
+        with self.connection() as db:
+            db.create_function('normalize',1,normalized)
+            where=' WHERE '+' AND '.join(clauses) if clauses else ''
+            rows=db.execute('SELECT m.id,m.updated FROM memories m'+where+' ORDER BY m.updated DESC,m.id DESC LIMIT ?',args+[limit+1]).fetchall()
+            ids=[row['id'] for row in rows[:limit]]
+            next_cursor=base64.urlsafe_b64encode(json.dumps([rows[limit-1]['updated'],ids[-1],signature]).encode()).decode() if len(rows)>limit else None
+            records=self.memories(identities=ids,source_limit=20)
+            lookup={row['id']:row for row in records}
+            return {'memories':[lookup[mid] for mid in ids if mid in lookup], 'cursor':next_cursor,'has_more':bool(next_cursor)}
 
     def retrieve(self, query, chat_id=None):
         with self.connection() as db:
@@ -321,16 +371,16 @@ class BrainStore:
         pool = {}
         tokens = list(terms(query))[:64]
         if tokens:
-            sql = base + scope_filter + " AND m.tier='long' AND m.id IN (SELECT memory_id FROM memory_terms WHERE term IN (" + ','.join('?' for _ in tokens) + ")) ORDER BY m.updated DESC LIMIT 100"
-            pool.update({row['id']: row for row in db.execute(sql, scope_args + tokens)})
-        fallback = db.execute(base + scope_filter + " AND m.tier='long' AND (m.kind='preference' OR sc.scope='project') ORDER BY m.updated DESC LIMIT 16", scope_args).fetchall()
+            sql = base + scope_filter + " AND m.tier IN ('long','vault') AND m.id IN (SELECT t.memory_id FROM memory_terms t JOIN memories m ON m.id=t.memory_id LEFT JOIN memory_scopes sc ON sc.memory_id=m.id WHERE t.term IN (" + ','.join('?' for _ in tokens) + ") AND " + scope_filter + " GROUP BY t.memory_id ORDER BY COUNT(*) DESC,t.memory_id LIMIT 100)"
+            pool.update({row['id']: row for row in db.execute(sql, scope_args + tokens + scope_args)})
+        fallback = db.execute(base + scope_filter + " AND m.tier IN ('long','vault') AND (m.kind='preference' OR sc.scope='project') ORDER BY m.updated DESC LIMIT 16", scope_args).fetchall()
         pool.update({row['id']: row for row in fallback})
         ranked = []
         for row in pool.values():
             overlap = len(set(tokens) & terms(row['content']))
             in_project = bool(project_id and row['scope'] == 'project')
             preference = row['kind'] == 'preference' and row['scope'] == 'global'
-            score = overlap * 5 + (3 if in_project else 0) + (1 if preference else 0)
+            score = overlap * 5 + (1 if row['tier']=='vault' else 0) + (3 if in_project else 0) + (1 if preference else 0)
             if score:
                 ranked.append((score, row))
         ranked.sort(key=lambda pair: (pair[0], pair[1]['updated']), reverse=True)
@@ -416,6 +466,7 @@ class BrainStore:
             analysis = dict.fromkeys(("pending", "processing", "done", "failed", "cancelled"), 0)
             analysis.update({row[0]: row[1] for row in db.execute("SELECT status,COUNT(*) FROM jobs GROUP BY status")})
             return {"settings": self.config(db),
+                    "neural": self.neurons.state(),
                     "analysis": analysis,
                     "chats": [dict(row) for row in db.execute("SELECT * FROM chats ORDER BY created DESC")],
                     "jobs": [dict(row) for row in db.execute("SELECT id,message_id,status,created,error,added FROM jobs ORDER BY created DESC LIMIT 50")],

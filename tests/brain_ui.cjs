@@ -264,8 +264,33 @@ const fs=require('node:fs/promises');
     await page.locator('[data-tab=projects]').click();
     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Project layout overflow on mobile');
     if(screenshots)await page.screenshot({path:path.join(screenshots,'projects-mobile.png'),fullPage:true});
+    // Durable memories, real lexical associations and paginated browsing.
+    await page.setViewportSize({width:1440,height:1000});
+    const neuralIds=await page.evaluate(async()=>{
+      const a=await api('memory',{content:'Нейрокарта сохраняет важные звёздные знания',tier:'vault'});
+      const b=await api('memory',{content:'Нейрокарта сохраняет важные звёздные решения',tier:'vault'});
+      return [a.id,b.id];
+    });
+    await page.waitForFunction(async()=>{const n=(await api('state')).neural;return n.links>0&&n.pending===0;},null,{timeout:30000});
+    await page.evaluate(async ids=>{await refresh();await window.BrainMap.open('memory:'+ids[0]);},neuralIds);
+    await page.waitForFunction(()=>document.getElementById('map-passport').textContent.includes('Общие основы слов:'));
+    if(screenshots)await page.screenshot({path:path.join(screenshots,'neural-map.png'),fullPage:true});
+    await page.locator('[data-tab=memory]').click();
+    await page.locator('#memory-search').fill('НЕЙРОКАРТА');
+    await page.locator('#memory-filter').selectOption('vault');
+    await page.waitForFunction(()=>document.querySelectorAll('#memories .memory-card').length===2);
+    if(!await page.locator('#neural-status').textContent().then(text=>text.includes('Автосвязи:')))throw Error('Neural counters missing');
+    await page.evaluate(async()=>{for(let i=0;i<53;i++)await api('memory',{content:'Страница долговременной памяти '+i,tier:'vault'});});
+    await page.locator('#memory-search').fill('Страница долговременной');
+    await page.waitForFunction(()=>document.querySelectorAll('#memories .memory-card').length===50);
+    await page.locator('#memory-more').click();
+    await page.waitForFunction(()=>document.querySelectorAll('#memories .memory-card').length===53);
+    if(!await page.locator('#memory-more').isHidden())throw Error('Memory cursor did not terminate');
+    await page.setViewportSize({width:390,height:844});
+    if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Neural memory mobile overflow');
+    if(screenshots)await page.screenshot({path:path.join(screenshots,'neural-memory-mobile.png'),fullPage:true});
     if(errors.length)throw Error(errors.join('\n'));
-    console.log('Browser QA passed: settings, lost-response recovery, per-message extraction progress, source/reply memory filters, stale refresh protection, cross-chat retrieval, project recognition/progress, versions/restore, profile, local checks, persisted handoff, development graph, source passports, actual memory traces, question resolution, growth history, local consolidation/group/undo, zoom/buttons/wheel/pinch, folding, tree/network/sequence, goal path, saved-data flashes, cursor paging/anchor/cache, fullscreen mobile passport, mobile layout.');
+    console.log('Browser QA passed: settings, lost-response recovery, per-message extraction progress, source/reply memory filters, stale refresh protection, cross-chat retrieval, project recognition/progress, versions/restore, profile, local checks, persisted handoff, development graph, source passports, actual memory traces, question resolution, growth history, local consolidation/group/undo, zoom/buttons/wheel/pinch, folding, tree/network/sequence, goal path, saved-data flashes, cursor paging/anchor/cache, fullscreen mobile passport, durable memory, explainable associations, memory cursor pagination, mobile layout.');
   }catch(error){
     if(page)console.error('Page notice:',await page.locator('#notice').textContent().catch(()=>''));
     if(page&&process.env.UI_SCREENSHOT_DIR){await fs.mkdir(process.env.UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.UI_SCREENSHOT_DIR,'failure.png'),fullPage:true}).catch(()=>{});}

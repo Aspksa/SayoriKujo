@@ -19,7 +19,7 @@ KINDS_RU = {"brain": "Общая память", "project": "Проект", "bran
             "memory": "Воспоминание", "message": "Сообщение", "progress": "Прогресс",
             "question": "Открытый вопрос", "option": "Вариант решения", "choice": "Выбор пользователя",
             "lesson": "Сообщённый опыт", "hypothesis": "Предположение"}
-EVENTS_RU = {"branch_created": "Создана ветка развития", "entry_added": "Добавлена запись развития",
+EVENTS_RU = {"memory_pinned": "Закреплено в особо долговременной памяти", "branch_created": "Создана ветка развития", "entry_added": "Добавлена запись развития",
              "progress_added": "Обновлён прогресс", "memory_added": "Сохранено воспоминание",
              "memory_imported": "Воспоминание добавлено в карту при обновлении", "memory_changed": "Изменено воспоминание",
              "memory_restored": "Восстановлена версия памяти", "grouped": "Повторы объединены в группу",
@@ -237,6 +237,8 @@ class Growth:
     def memory_changed(self, db, memory_id, kind='memory_changed'):
         db.execute('DELETE FROM memory_links WHERE first_id=? OR second_id=?', (memory_id, memory_id))
         self.event(db, kind, memory_id=memory_id)
+        if hasattr(self.store, 'neurons'):
+            self.store.neurons.enqueue(db, memory_id, invalidate=True)
 
     def task_completed(self, db, memory_id):
         return bool(db.execute('SELECT 1 FROM memories m WHERE m.id=? AND ('+CLOSED_TASK_SQL+')', (memory_id,)).fetchone())
@@ -248,6 +250,8 @@ class Growth:
         safe = trace or {}
         db.execute('INSERT INTO reply_traces VALUES(?,?,?,?)', (reply_id, user_id, json.dumps(safe), now()))
         ids = set(safe.get('memory_ids', [])) | set(safe.get('summary_memory_ids', []))
+        if hasattr(self.store, 'neurons'):
+            self.store.neurons.activate(db, ids)
         for memory_id in ids:
             if db.execute('SELECT 1 FROM memories WHERE id=?', (memory_id,)).fetchone():
                 self.use(db, memory_id, now())
@@ -451,7 +455,7 @@ class Growth:
                 'SELECT COUNT(*),MAX(created) FROM growth_events', 'SELECT COUNT(*),MAX(updated) FROM memories',
                 'SELECT COUNT(*),MAX(updated) FROM development_entries', 'SELECT COUNT(*),MAX(updated) FROM development_branches',
                 'SELECT COUNT(*),MAX(updated) FROM consolidation_suggestions', 'SELECT COUNT(*) FROM reply_traces',
-                'SELECT COUNT(*) FROM messages', 'SELECT last_run FROM consolidation_state') for value in db.execute(query).fetchone())
+                'SELECT COUNT(*) FROM messages', 'SELECT last_run FROM neural_state', 'SELECT last_run FROM consolidation_state') for value in db.execute(query).fetchone())
             return row
 
     def source(self, db, message_id):
@@ -482,6 +486,8 @@ class Growth:
             result['sources'] = [self.source(db, source[0]) for source in db.execute('SELECT message_id FROM sources WHERE memory_id=? ORDER BY rowid DESC LIMIT ?', (entity_id,source_limit))]
             usage = db.execute('SELECT count,last_used FROM memory_usage WHERE memory_id=?', (entity_id,)).fetchone()
             result['usage'] = dict(usage) if usage else {'count': 0, 'last_used': None}
+            if source_limit and hasattr(self.store, 'neurons'):
+                result['neural_links'] = self.store.neurons.links(db, entity_id)
             if self.task_completed(db, entity_id):
                 result['status'] = 'completed'
         elif kind == 'message':

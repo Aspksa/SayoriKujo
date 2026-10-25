@@ -319,6 +319,7 @@ class BrainService:
             self.store.fail_job(job, "Не удалось обработать память. Повторите анализ вручную.")
         self.store.learning.safe_checks()
         self.store.growth.safe_consolidate(force=True)
+        self.store.neurons.safe_tick()
         return True
 
     def run(self):
@@ -327,6 +328,7 @@ class BrainService:
                 if self.process_one():
                     continue
                 self.store.growth.safe_consolidate()
+                self.store.neurons.safe_tick()
             except Exception:
                 # Storage may be temporarily busy. Do not crash the local server or flood API calls.
                 pass
@@ -369,6 +371,9 @@ class BrainService:
                     identities is not None and (len(identities) > 20 or any(
                         not re.fullmatch(r"[a-f0-9]{32}", value) for value in identities))):
                 raise BrainError("Некорректный фильтр источников памяти.")
+            if query.get('paged',[''])[0]=='1':
+                return self.store.memory_page(query.get('q',[''])[0][:500],message_id,identities,project_id,
+                    query.get('tier',[''])[0],query.get('cursor',[None])[0])
             return {"memories": self.store.memories(query.get("q", [""])[0][:500], message_id, identities, project_id)}
         raise BrainError("Раздел не найден.", 404)
 

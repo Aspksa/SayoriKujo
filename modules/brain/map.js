@@ -6,7 +6,7 @@
     superseded:'Заменено',done:'Сохранено',pending:'Ожидание'};
   const relationLabels={contains:'Содержит',develops:'Направление',belongs:'Относится к проекту',remembers:'Сохранено в памяти',
     grounds:'Источник',closes:'Закрывает задачу',supersedes:'Заменяет',answers:'Отвечает на вопрос',selects:'Выбирает вариант',
-    duplicate:'Объединено вами как повтор',conflicts:'Возможно противоречит'};
+    association:'Автосвязь по общим словам',duplicate:'Объединено вами как повтор',conflicts:'Возможно противоречит'};
   const progressNames={goal:'Цель',decision:'Решение',done:'Сделано',todo:'Осталось',stopped:'Место остановки'};
   let graph=null,selected='brain',passport=null,mode='graph',active=false,limit=30,path=false;
   let graphVersion=0,passportVersion=0,auxVersion=0,revision=null,loading=false,refreshQueued=false;
@@ -235,6 +235,10 @@
     if(data.type==='memory'){
       container.append(element('p',(data.confirmed?'Подтверждено вами':'Из сообщения пользователя')+' · '+(tiers[data.tier]||data.tier)+' · '+(data.scope==='global'?'Общее':'Проектная запись'),'muted fine'));
       container.append(element('p','Создано: '+date(data.created)+'\nИзменено: '+date(data.updated)+'\nПередано в контекст ответов: '+data.usage.count+(data.usage.last_used?'\nПоследний раз: '+date(data.usage.last_used):''),'muted fine'));
+      if(data.neural_links?.length){container.append(element('h4','Автосвязи · сходство слов'));
+        for(const link of data.neural_links){container.append(button(link.title,()=>window.BrainMap.open('memory:'+link.id),'map-related'),element('p','Общие основы слов: '+link.shared.join(', ')+' · Совместно в ответах: '+link.coactivations,'muted fine'));}
+        container.append(element('p','Сходство формулировок не подтверждает достоверность сведений.','muted fine'));
+      }
       if(data.note)container.append(element('p','Толкование анализатора: '+data.note,'muted fine'));
       const actions=element('div',undefined,'actions');actions.append(button('Исправить / подтвердить',async()=>{
         closeCard();tab('memory',{ids:[data.entity_id]});await loadMemories();const row=memoryRows.find(row=>row.id===data.entity_id);if(row)editMemory(row);

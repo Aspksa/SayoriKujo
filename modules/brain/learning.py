@@ -211,11 +211,13 @@ class Learning:
                 self.ensure_memory(db, target["id"])
                 self.version(db, target["id"], "До явного исправления пользователем")
                 db.execute("UPDATE memories SET status='superseded',updated=? WHERE id=?", (now(), target["id"]))
+                self.store.neurons.enqueue(db,target["id"])
             elif conflicts and not older and not prior:
                 for row in conflicts:
                     if row["origin"] == "auto":
                         self.version(db, row["id"], "До обнаружения возможного противоречия")
                         db.execute("UPDATE memories SET status='conflict',updated=? WHERE id=?", (now(), row["id"]))
+                        self.store.neurons.enqueue(db,row["id"])
             if not prior:
                 db.execute("""INSERT INTO memories(id,content,digest,kind,tier,slot,note,origin,status,created,updated)
                            VALUES(?,?,?,?,?,?,?,'auto',?,?,?)""", (identity, quote, digest, item["kind"],
@@ -233,6 +235,7 @@ class Learning:
                 series = db.execute("SELECT series_id FROM memory_series WHERE memory_id=?", (target["id"],)).fetchone()[0]
                 db.execute("UPDATE memory_series SET series_id=? WHERE memory_id=?", (series, identity))
             db.execute("INSERT OR IGNORE INTO sources VALUES(?,?)", (identity, job["message_id"]))
+            self.store.neurons.enqueue(db, identity)
             if not prior or valid_update:
                 self.version(db, identity, "Явное обновление факта" if valid_update else "Из сообщения пользователя")
             self.check_case(db, identity, item.get("question", ""), project_id if scope == "project" else None)
@@ -240,6 +243,8 @@ class Learning:
             self.progress(db, project_id, job, analysis.get("progress", []), source_created)
         self.refresh_summary(db, job["chat_id"])
         self.store.growth.sync_analysis(db, job, analysis)
+        for row in db.execute('SELECT memory_id FROM sources WHERE message_id=?',(job['message_id'],)).fetchall():
+            self.store.neurons.enqueue(db,row[0])
         return added
 
     def progress(self, db, project_id, job, entries, created):

@@ -90,6 +90,14 @@ class MapBuilder:
                 for relation in self.db.execute('SELECT * FROM development_relations WHERE entry_id=? OR target_id=? LIMIT 40',(data['entity_id'],data['entity_id'])):
                     self.link(neighbor('entry:'+relation['entry_id']),neighbor('entry:'+relation['target_id']),relation['kind'])
             if key.startswith('memory:'):
+                for relation in self.growth.store.neurons.links(self.db,data['entity_id']):
+                    target=neighbor('memory:'+relation['id'])
+                    if target:
+                        first,second=sorted((key,target))
+                        self.link(first,second,'association')
+                        edge=self.edges.get((first,second,'association'))
+                        if edge is not None:
+                            edge.update(shared=relation['shared'],similarity=relation['similarity'],coactivations=relation['coactivations'])
                 for relation in self.db.execute('SELECT * FROM memory_links WHERE first_id=? OR second_id=? LIMIT 20',(data['entity_id'],data['entity_id'])):
                     self.link(neighbor('memory:'+relation['first_id']),neighbor('memory:'+relation['second_id']),'duplicate')
                 if data['status']=='active':
@@ -197,6 +205,9 @@ class MapData:
             for row in db.execute('''SELECT l.first_id,l.second_id,l.created FROM memory_links l WHERE EXISTS
                 (SELECT 1 FROM memory_projects p WHERE p.project_id=? AND p.memory_id IN (l.first_id,l.second_id))
                 ORDER BY l.first_id,l.second_id''',(data['entity_id'],)):
+                digest.update(json.dumps(tuple(row)).encode())
+        if data['type']=='project':
+            for row in db.execute('SELECT s.first_id,s.second_id,s.updated,s.coactivations FROM synapses s WHERE EXISTS (SELECT 1 FROM memory_projects p WHERE p.project_id=? AND p.memory_id=s.first_id) ORDER BY s.first_id,s.second_id',(data['entity_id'],)):
                 digest.update(json.dumps(tuple(row)).encode())
         return digest.hexdigest(),count
 

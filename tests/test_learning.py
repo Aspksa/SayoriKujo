@@ -290,14 +290,14 @@ class LearningTests(unittest.TestCase):
         self.assertEqual(reopened.store.memories()[0]["id"], memory_id)
         self.assertTrue(reopened.store.learning.versions(memory_id))
         backups = list((self.root / "backups").glob("*.sqlite3"))
-        self.assertEqual(len(backups), 2)
+        self.assertEqual(len(backups), 3)
         backups = list((self.root / "backups").glob("before-v2-*.sqlite3"))
         with closing(sqlite3.connect(backups[0])) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM memories").fetchone()[0], 1)
             self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 0)
         another = brain.BrainService(self.root, self.cloud.factory, start_worker=False)
         self.addCleanup(another.close)
-        self.assertEqual(len(list((self.root / "backups").glob("*.sqlite3"))), 2)
+        self.assertEqual(len(list((self.root / "backups").glob("*.sqlite3"))), 3)
         self.assertEqual(len(another.store.messages(another.store.overview()["chats"][0]["id"])), 2)
 
 
